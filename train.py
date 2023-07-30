@@ -1,6 +1,6 @@
 #!/usr/bin/env/python
 
-"""Recipe for training a transducer-based TS-ASR system.
+"""Recipe for training a transducer-based TS-ASR system (see https://arxiv.org/abs/2209.04175).
 
 To run this recipe, do the following:
 > python train.py hparams/<config>.yaml

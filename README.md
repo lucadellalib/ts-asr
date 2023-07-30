@@ -1,7 +1,7 @@
 # Target Speaker Automatic Speech Recognition
 
-This recipe includes scripts to train transducer-based target speaker automatic speech recognition
-(TS-ASR) systems on [LibriSpeechMix](https://github.com/NaoyukiKanda/LibriSpeechMix).
+This recipe includes scripts to train transducer-based target speaker automatic speech recognition]
+(TS-ASR) systems (see https://arxiv.org/abs/2209.04175) on [LibriSpeechMix](https://github.com/NaoyukiKanda/LibriSpeechMix).
 
 ---------------------------------------------------------------------------------------------------------
 
