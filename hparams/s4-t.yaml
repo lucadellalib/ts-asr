@@ -31,16 +31,16 @@ save_folder: !ref <output_folder>/save
 
 # Preprocessing parameters
 sample_rate: 16000
-sorting: ascending
+sorting: descending
 n_fft: 400
 n_mels: 80
 
 # Training parameters
 num_epochs: 30
-num_ctc_epochs: 2
-ctc_weight: 0.33
-num_ce_epochs: 2
-ce_weight: 0.33
+num_ctc_epochs: 0
+ctc_weight: 0.0
+num_ce_epochs: 0
+ce_weight: 0.0
 
 train_batch_size: 4
 valid_batch_size: 8
@@ -65,7 +65,7 @@ auto_mix_prec: True
 ckpt_interval_minutes: 600
 
 # Model parameters
-num_layers: 12
+num_layers: 10
 d_model: 512
 d_ffn: 2048
 kernel_size: 31
@@ -75,7 +75,7 @@ dropout: 0.0
 causal: True
 s4_layer_type: !name:models.dss.DSS
 s4_layer_kwargs:
-    state_size: 512
+    state_size: 1024
 decoder_neurons: !ref <d_model>
 joint_dim: !ref <d_model>
 
@@ -196,17 +196,17 @@ modules:
     CNN: !ref <CNN>
     FF: !ref <FF>
     encoder: !ref <encoder>
-    encoder_head: !ref <encoder_head>
+    #encoder_head: !ref <encoder_head>
     embedding: !ref <embedding>
     decoder: !ref <decoder>
-    decoder_head: !ref <decoder_head>
+    #decoder_head: !ref <decoder_head>
     joiner: !ref <joiner>
     transducer_head: !ref <transducer_head>
 
 model: !new:torch.nn.ModuleList
     [[!ref <speaker_feature_extractor>, !ref <speaker_normalizer>, !ref <speaker_encoder>, !ref <speaker_projection>,
-      !ref <CNN>, !ref <FF>, !ref <encoder>, !ref <encoder_head>,
-      !ref <embedding>, !ref <decoder>, !ref <decoder_head>,
+      !ref <CNN>, !ref <FF>, !ref <encoder>, #!ref <encoder_head>,
+      !ref <embedding>, !ref <decoder>, #!ref <decoder_head>,
       !ref <joiner>, !ref <transducer_head>]]
 
 # Loss functions

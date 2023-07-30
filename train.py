@@ -205,7 +205,7 @@ def dataio_prepare(hparams, tokenizer):
 
     elif hparams["sorting"] == "descending":
         # Sort training data to speed up training and get better results
-        train_data = train_data.filtered_sorted(sort_key="duration", reverse=True,)
+        train_data = train_data.filtered_sorted(sort_key="duration", reverse=True)
         # When sorting do not shuffle in dataloader otherwise it is pointless
         hparams["train_dataloader_kwargs"]["shuffle"] = False
 
