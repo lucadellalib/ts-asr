@@ -1,6 +1,6 @@
 # Target Speaker Automatic Speech Recognition
 
-This recipe includes scripts to train end-to-end transducer-based target speaker automatic speech recognition]
+This recipe includes scripts to train end-to-end transducer-based target speaker automatic speech recognition
 (TS-ASR) systems as proposed in [Streaming Target-Speaker ASR with Neural Transducer](https://arxiv.org/abs/2209.04175)
 on [LibriSpeechMix](https://github.com/NaoyukiKanda/LibriSpeechMix).
 
