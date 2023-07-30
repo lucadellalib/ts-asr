@@ -31,7 +31,7 @@ save_folder: !ref <output_folder>/save
 
 # Preprocessing parameters
 sample_rate: 16000
-sorting: descending
+sorting: descending  # Fail-fast in case of OOM due to long utterances
 n_fft: 400
 n_mels: 80
 
@@ -86,6 +86,7 @@ beam_size: 1
 nbest: 1
 state_beam: 2.3  # See https://arxiv.org/abs/1904.02619
 expand_beam: 2.3  # See https://arxiv.org/abs/1904.02619
+valid_search_freq: 5
 
 # Modules
 speaker_feature_extractor: !new:speechbrain.lobes.features.Fbank

@@ -93,8 +93,8 @@ def prepare_librispeech_mix(
             input_jsonl = os.path.join(data_folder, "list", f"{split}.jsonl")
             if not os.path.exists(input_jsonl):
                 raise RuntimeError(
-                    f'"{input_jsonl}" JSONL not found. '
-                    f"Download the data generation scripts from https://github.com/NaoyukiKanda/LibriSpeechMix "
+                    f'"{input_jsonl}" not found. Download the data generation '
+                    f"scripts from https://github.com/NaoyukiKanda/LibriSpeechMix "
                     f"and follow the readme to generate the data"
                 )
             with open(input_jsonl, "r", encoding="utf-8") as fr:
@@ -131,10 +131,13 @@ def prepare_librispeech_mix(
 
         # Write output JSON
         output_json = os.path.join(data_folder, f"{group_name}.json")
-        _LOGGER.info(f"Writing output JSON file ({output_json})...")
+        _LOGGER.info(f"Writing {output_json}...")
         with open(output_json, "w", encoding="utf-8") as fw:
             json.dump(output_entries, fw, ensure_ascii=False, indent=4)
 
+    _LOGGER.info(
+        "----------------------------------------------------------------------",
+    )
     _LOGGER.info("Done!")
 
 

@@ -42,9 +42,10 @@ class TSASR(sb.Brain):
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder
-        if type(self.modules.encoder).__name__ == "CRDNN":
+        # Use self.hparams.encoder instead of self.modules.encoder for compatibility with DDP
+        if type(self.hparams.encoder).__name__ == "CRDNN":
             encoder_out = self.modules.encoder(feats)
-        elif type(self.modules.encoder).__name__ == "ConformerEncoder":
+        elif type(self.hparams.encoder).__name__ == "ConformerEncoder":
             src = self.modules.CNN(feats)
             src = src.flatten(start_dim=-2)
             src = self.modules.FF(src)
@@ -54,7 +55,7 @@ class TSASR(sb.Brain):
             encoder_out, _ = self.modules.encoder(
                 src, src_key_padding_mask=src_key_padding_mask, pos_embs=pos_embs,
             )
-        elif type(self.modules.encoder).__name__ == "S4Encoder":
+        elif type(self.hparams.encoder).__name__ == "S4Encoder":
             src = self.modules.CNN(feats)
             src = src.flatten(start_dim=-2)
             src = self.modules.FF(src)
@@ -111,8 +112,19 @@ class TSASR(sb.Brain):
                 # Output layer for CTC log-probabilities
                 ce_logits = self.modules.decoder_head(decoder_out)
                 ce_logprobs = self.hparams.log_softmax(ce_logits)
-        else:
+
+        elif stage == sb.Stage.VALID:
+            # During validation, run decoding only every
+            # valid_search_freq epochs to speed up training
+            current_epoch = self.hparams.epoch_counter.current
+            if current_epoch % self.hparams.valid_search_freq == 0:
+                hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
+
+        elif stage == sb.Stage.TEST:
             hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
+
+        else:
+            raise NotImplementedError
 
         return transducer_logits, ctc_logprobs, ce_logprobs, hyps
 
@@ -308,7 +320,7 @@ if __name__ == "__main__":
     # Dataset preparation
     from librispeech_mix_prepare import prepare_librispeech_mix  # noqa
 
-    # Due to DDP, do the preparation ONLY on the main python process
+    # Due to DDP, do the preparation ONLY on the main Python process
     run_on_main(
         prepare_librispeech_mix,
         kwargs={"data_folder": hparams["data_folder"], "splits": hparams["splits"]},
