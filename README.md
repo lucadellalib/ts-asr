@@ -2,7 +2,7 @@
 
 [![Python version: 3.6 | 3.7 | 3.8 | 3.9 | 3.10 | 3.11](https://img.shields.io/badge/python-3.6%20|%203.7%20|%203.8%20|%203.9%20|%203.10%20|%203.11-blue)](https://www.python.org/downloads/)
 
-This recipe includes scripts to train end-to-end transducer-based target speaker automatic speech recognition
+This SpeechBrain recipe includes scripts to train end-to-end transducer-based target speaker automatic speech recognition
 (TS-ASR) systems as proposed in [Streaming Target-Speaker ASR with Neural Transducer](https://arxiv.org/abs/2209.04175)
 on [LibriSpeechMix](https://github.com/NaoyukiKanda/LibriSpeechMix).
 
