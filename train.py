@@ -112,19 +112,13 @@ class TSASR(sb.Brain):
                 # Output layer for CTC log-probabilities
                 ce_logits = self.modules.decoder_head(decoder_out)
                 ce_logprobs = self.hparams.log_softmax(ce_logits)
-
         elif stage == sb.Stage.VALID:
             # During validation, run decoding only every
             # valid_search_freq epochs to speed up training
-            current_epoch = self.hparams.epoch_counter.current
-            if current_epoch % self.hparams.valid_search_freq == 0:
+            if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
                 hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
-
-        elif stage == sb.Stage.TEST:
-            hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
-
         else:
-            raise NotImplementedError
+            hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
 
         return transducer_logits, ctc_logprobs, ce_logprobs, hyps
 
@@ -172,6 +166,10 @@ class TSASR(sb.Brain):
         stage_stats = {"loss": stage_loss}
         if stage == sb.Stage.TRAIN:
             self.train_stats = stage_stats
+        elif stage == sb.Stage.VALID:
+            if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
+                stage_stats["WER"] = self.wer_metric.summarize("error_rate")
+                stage_stats["CER"] = self.cer_metric.summarize("error_rate")
         else:
             stage_stats["WER"] = self.wer_metric.summarize("error_rate")
             stage_stats["CER"] = self.cer_metric.summarize("error_rate")
@@ -185,9 +183,10 @@ class TSASR(sb.Brain):
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
-            self.checkpointer.save_and_keep_only(
-                meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
-            )
+            if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
+                self.checkpointer.save_and_keep_only(
+                    meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
+                )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
