@@ -4,7 +4,7 @@
 # ############################################################################
 
 # Adapted from:
-# https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/CommonVoice/ASR/transducer/hparams/train_fr.yaml
+# https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/hparams/conformer_transducer.yaml
 
 experiment_name: S4-T
 
@@ -36,11 +36,11 @@ n_fft: 400
 n_mels: 80
 
 # Training parameters
-num_epochs: 30
-num_ctc_epochs: 0
-ctc_weight: 0.0
-num_ce_epochs: 0
-ce_weight: 0.0
+num_epochs: 100
+#num_ctc_epochs: 2
+#ctc_weight: 0.33
+#num_ce_epochs: 2
+#ce_weight: 0.33
 
 train_batch_size: 4
 valid_batch_size: 8
@@ -54,10 +54,11 @@ token_type: char  # ["unigram", "bpe", "char"]
 character_coverage: 1.0
 blank_index: 0  # Index(blank/bos/eos) = 0
 
-lr: 0.0003
+lr: 0.0008
+min_lr: 0.000001
 improvement_threshold: 0.0025
 annealing_factor: 0.8
-patient: 0
+patient: 3
 
 nonfinite_patience: 10
 max_grad_norm: 5.0
@@ -65,26 +66,29 @@ auto_mix_prec: True
 ckpt_interval_minutes: 600
 
 # Model parameters
-num_layers: 10
+activation: !name:torch.nn.LeakyReLU
+dropout: 0.0
 d_model: 512
+num_encoder_layers: 10
 d_ffn: 2048
 kernel_size: 31
-activation: !name:speechbrain.nnet.activations.Swish
-bias: True
-dropout: 0.0
 causal: True
-s4_layer_type: !name:models.dss.DSS
+s4_layer_type: !name:models.layers.dss.DSS
 s4_layer_kwargs:
     state_size: 1024
-decoder_neurons: !ref <d_model>
-joint_dim: !ref <d_model>
+
+decoder_neurons: 512
+decoder_num_layers: 1
+
+joint_dim: 640
 
 # Decoding parameters
+valid_search_freq: 5
 beam_size: 1
 nbest: 1
-state_beam: 2.3  # See https://arxiv.org/abs/1904.02619
-expand_beam: 2.3  # See https://arxiv.org/abs/1904.02619
-valid_search_freq: 5
+# state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
+state_beam: 2.3
+expand_beam: 2.3
 
 # Modules
 speaker_feature_extractor: !new:speechbrain.lobes.features.Fbank
@@ -102,9 +106,9 @@ speaker_encoder: !new:speechbrain.lobes.models.ECAPA_TDNN.ECAPA_TDNN
     attention_channels: 128
     lin_neurons: 192
 
-speaker_projection: !new:speechbrain.nnet.linear.Linear
+speaker_proj: !new:speechbrain.nnet.linear.Linear
     input_size: 192  # Must be set equal to the speaker encoder embedding size (192 for ECAPA-TDNN)
-    n_neurons: !ref <joint_dim>
+    n_neurons: !ref <d_model>
 
 feature_extractor: !new:speechbrain.lobes.features.Fbank
     sample_rate: !ref <sample_rate>
@@ -126,37 +130,24 @@ augmentation: !new:speechbrain.lobes.augment.SpecAugment
     freq_mask_width: 30
     time_mask_width: 40
 
-CNN: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
-    input_shape: (8, 10, 80)
-    num_blocks: 3
-    num_layers_per_block: 1
-    out_channels: (64, 64, 64)
-    kernel_sizes: (5, 5, 1)
-    strides: (2, 2, 1)
-    residuals: (False, False, True)
-
-FF: !new:speechbrain.nnet.containers.ModuleList
-    - !new:speechbrain.nnet.linear.Linear
-        input_size: 1280
-        n_neurons: !ref <d_model>
-    - !new:torch.nn.Dropout
-        p: !ref <dropout>
-
-encoder: !new:models.s4.S4Encoder
-    num_layers: !ref <num_layers>
+encoder: !new:models.s4.S4
+    input_size: !ref <n_mels>
     d_model: !ref <d_model>
+    num_encoder_layers: !ref <num_encoder_layers>
     d_ffn: !ref <d_ffn>
-    kernel_size: !ref <kernel_size>
-    activation: !ref <activation>
-    bias: !ref <bias>
     dropout: !ref <dropout>
+    kernel_size: !ref <kernel_size>
     causal: !ref <causal>
     s4_layer_type: !ref <s4_layer_type>
     s4_layer_kwargs: !ref <s4_layer_kwargs>
 
-encoder_head: !new:speechbrain.nnet.linear.Linear
+encoder_proj: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <d_model>
     n_neurons: !ref <joint_dim>
+
+#encoder_head: !new:speechbrain.nnet.linear.Linear
+#    input_size: !ref <joint_dim>
+#    n_neurons: !ref <vocab_size>
 
 embedding: !new:speechbrain.nnet.embedding.Embedding
     num_embeddings: !ref <vocab_size>
@@ -166,13 +157,17 @@ embedding: !new:speechbrain.nnet.embedding.Embedding
 decoder: !new:speechbrain.nnet.RNN.GRU
     input_shape: [null, null, !ref <vocab_size> - 1]
     hidden_size: !ref <decoder_neurons>
-    num_layers: 1
+    num_layers: !ref <decoder_num_layers>
     re_init: True
 
-decoder_head: !new:speechbrain.nnet.linear.Linear
+decoder_proj: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <decoder_neurons>
     n_neurons: !ref <joint_dim>
-    bias: False
+
+#decoder_head: !new:speechbrain.nnet.linear.Linear
+#    input_size: !ref <joint_dim>
+#    n_neurons: !ref <vocab_size>
+#    bias: False
 
 joiner: !new:speechbrain.nnet.transducer.transducer_joint.Transducer_joint
     joint: sum  # [sum | concat]
@@ -183,31 +178,28 @@ transducer_head: !new:speechbrain.nnet.linear.Linear
     n_neurons: !ref <vocab_size>
     bias: False
 
-log_softmax: !new:speechbrain.nnet.activations.Softmax
-    apply_log: True
-
 modules:
     speaker_feature_extractor: !ref <speaker_feature_extractor>
     speaker_normalizer: !ref <speaker_normalizer>
     speaker_encoder: !ref <speaker_encoder>
-    speaker_projection: !ref <speaker_projection>
+    speaker_proj: !ref <speaker_proj>
     feature_extractor: !ref <feature_extractor>
     normalizer: !ref <normalizer>
     augmentation: !ref <augmentation>
-    CNN: !ref <CNN>
-    FF: !ref <FF>
     encoder: !ref <encoder>
+    encoder_proj: !ref <encoder_proj>
     #encoder_head: !ref <encoder_head>
     embedding: !ref <embedding>
     decoder: !ref <decoder>
+    decoder_proj: !ref <decoder_proj>
     #decoder_head: !ref <decoder_head>
     joiner: !ref <joiner>
     transducer_head: !ref <transducer_head>
 
 model: !new:torch.nn.ModuleList
-    [[!ref <speaker_feature_extractor>, !ref <speaker_normalizer>, !ref <speaker_encoder>, !ref <speaker_projection>,
-      !ref <CNN>, !ref <FF>, !ref <encoder>, #!ref <encoder_head>,
-      !ref <embedding>, !ref <decoder>, #!ref <decoder_head>,
+    [[!ref <speaker_feature_extractor>, !ref <speaker_normalizer>, !ref <speaker_encoder>, !ref <speaker_proj>,
+      !ref <feature_extractor>, !ref <normalizer>, !ref <augmentation>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
+      !ref <embedding>, !ref <decoder>, !ref <decoder_proj>, #!ref <decoder_head>,
       !ref <joiner>, !ref <transducer_head>]]
 
 # Loss functions
@@ -215,11 +207,11 @@ transducer_loss: !name:speechbrain.nnet.losses.transducer_loss
     use_torchaudio: True
     blank_index: !ref <blank_index>
 
-ctc_loss: !name:speechbrain.nnet.losses.ctc_loss
-    blank_index: !ref <blank_index>
+#ctc_loss: !name:speechbrain.nnet.losses.ctc_loss
+#    blank_index: !ref <blank_index>
 
-ce_loss: !name:speechbrain.nnet.losses.nll_loss
-    label_smoothing: 0.1
+#ce_loss: !name:speechbrain.nnet.losses.nll_loss
+#    label_smoothing: 0.1
 
 # Optimizers
 opt_class: !name:torch.optim.AdamW

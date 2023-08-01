@@ -1,6 +1,7 @@
 #!/usr/bin/env/python
 
-"""Recipe for training a transducer-based TS-ASR system (see https://arxiv.org/abs/2209.04175).
+"""Recipe for training a transducer-based TS-ASR system
+(see https://arxiv.org/abs/2209.04175).
 
 To run this recipe, do the following:
 > python train.py hparams/<config>.yaml
@@ -10,7 +11,7 @@ Authors
 """
 
 # Adapted from:
-# https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/CommonVoice/ASR/transducer/train.py
+# https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
 import os
 import sys
@@ -32,6 +33,13 @@ class TSASR(sb.Brain):
         enroll_wavs, enroll_wav_lens = batch.enroll_sig
         tokens_bos, _ = batch.tokens_bos
 
+        # Extract speaker embedding (freeze speaker encoder)
+        with torch.no_grad():
+            feats = self.modules.speaker_feature_extractor(enroll_wavs)
+            feats = self.modules.speaker_normalizer(feats, enroll_wav_lens)
+            speaker_embs = self.modules.speaker_encoder(feats, enroll_wav_lens)
+        speaker_embs = self.modules.speaker_proj(speaker_embs)
+
         # Extract features
         feats = self.modules.feature_extractor(mixed_wavs)
         feats = self.modules.normalizer(feats, mixed_wav_lens)
@@ -42,44 +50,13 @@ class TSASR(sb.Brain):
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder
-        # Use self.hparams.encoder instead of self.modules.encoder for compatibility with DDP
-        if type(self.hparams.encoder).__name__ == "CRDNN":
-            encoder_out = self.modules.encoder(feats)
-        elif type(self.hparams.encoder).__name__ == "ConformerEncoder":
-            src = self.modules.CNN(feats)
-            src = src.flatten(start_dim=-2)
-            src = self.modules.FF(src)
-            abs_lens = (mixed_wav_lens * src.shape[-2]).round()
-            src_key_padding_mask = ~length_to_mask(abs_lens).bool()
-            pos_embs = self.modules.positional_encoding(src)
-            encoder_out, _ = self.modules.encoder(
-                src, src_key_padding_mask=src_key_padding_mask, pos_embs=pos_embs,
-            )
-        elif type(self.hparams.encoder).__name__ == "S4Encoder":
-            src = self.modules.CNN(feats)
-            src = src.flatten(start_dim=-2)
-            src = self.modules.FF(src)
-            abs_lens = (mixed_wav_lens * src.shape[-2]).round()
-            src_key_padding_mask = ~length_to_mask(abs_lens).bool()
-            encoder_out = self.modules.encoder(
-                src, src_key_padding_mask=src_key_padding_mask,
-            )
-        else:
-            raise NotImplementedError
-
-        # Extract speaker embedding (freeze speaker encoder)
-        with torch.no_grad():
-            feats = self.modules.speaker_feature_extractor(enroll_wavs)
-            feats = self.modules.speaker_normalizer(feats, enroll_wav_lens)
-            spk_embs = self.modules.speaker_encoder(feats, enroll_wav_lens)
-
-        # Inject speaker embedding information via element-wise product
-        spk_embs_proj = self.modules.speaker_projection(spk_embs)
-        encoder_out *= spk_embs_proj
+        encoder_out = self.modules.encoder(feats, mixed_wav_lens, speaker_embs)
+        encoder_out = self.modules.encoder_proj(encoder_out)
 
         # Forward decoder/predictor
         embs = self.modules.embedding(tokens_bos)
         decoder_out, _ = self.modules.decoder(embs)
+        decoder_out = self.modules.decoder_proj(decoder_out)
 
         # Forward joiner
         # Add label dimension to the encoder tensor: [B, T, H_enc] => [B, T, 1, H_enc]
@@ -97,21 +74,20 @@ class TSASR(sb.Brain):
         ce_logprobs = None
 
         if stage == sb.Stage.TRAIN:
-            current_epoch = self.hparams.epoch_counter.current
             if (
                 hasattr(self.hparams, "ctc_cost")
-                and current_epoch <= self.hparams.num_ctc_epochs
+                and self.hparams.epoch_counter.current <= self.hparams.num_ctc_epochs
             ):
                 # Output layer for CTC log-probabilities
                 ctc_logits = self.modules.encoder_head(encoder_out)
-                ctc_logprobs = self.hparams.log_softmax(ctc_logits)
+                ctc_logprobs = ctc_logits.log_softmax(dim=-1)
             if (
                 hasattr(self.hparams, "ce_cost")
-                and current_epoch <= self.hparams.num_ce_epochs
+                and self.hparams.epoch_counter.current <= self.hparams.num_ce_epochs
             ):
                 # Output layer for CTC log-probabilities
                 ce_logits = self.modules.decoder_head(decoder_out)
-                ce_logprobs = self.hparams.log_softmax(ce_logits)
+                ce_logprobs = ce_logits.log_softmax(dim=-1)
         elif stage == sb.Stage.VALID:
             # During validation, run decoding only every
             # valid_search_freq epochs to speed up training
@@ -149,16 +125,16 @@ class TSASR(sb.Brain):
             # Decode predicted tokens to words
             predicted_words = self.tokenizer(hyps, task="decode_from_list")
 
-            self.wer_metric.append(ids, predicted_words, target_words)
             self.cer_metric.append(ids, predicted_words, target_words)
+            self.wer_metric.append(ids, predicted_words, target_words)
 
         return loss
 
     def on_stage_start(self, stage, epoch):
         """Gets called at the beginning of each epoch."""
         if stage != sb.Stage.TRAIN:
-            self.wer_metric = self.hparams.wer_computer()
             self.cer_metric = self.hparams.cer_computer()
+            self.wer_metric = self.hparams.wer_computer()
 
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of each epoch."""
@@ -168,15 +144,16 @@ class TSASR(sb.Brain):
             self.train_stats = stage_stats
         elif stage == sb.Stage.VALID:
             if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
-                stage_stats["WER"] = self.wer_metric.summarize("error_rate")
                 stage_stats["CER"] = self.cer_metric.summarize("error_rate")
+                stage_stats["WER"] = self.wer_metric.summarize("error_rate")
         else:
-            stage_stats["WER"] = self.wer_metric.summarize("error_rate")
             stage_stats["CER"] = self.cer_metric.summarize("error_rate")
+            stage_stats["WER"] = self.wer_metric.summarize("error_rate")
 
         # Perform end-of-iteration operations, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
             old_lr, new_lr = self.hparams.lr_annealing(stage_stats["loss"])
+            new_lr = max(new_lr, self.hparams.min_lr)
             sb.nnet.schedulers.update_learning_rate(self.optimizer, new_lr)
             self.hparams.train_logger.log_stats(
                 stats_meta={"epoch": epoch, "lr": old_lr},
@@ -376,7 +353,7 @@ if __name__ == "__main__":
         _, _, test_data = dataio_prepare(hparams, tokenizer)
 
         brain.hparams.wer_file = os.path.join(
-            hparams["output_folder"], f"wer_test_{split}.txt"
+            hparams["output_folder"], f"wer_{split}.txt"
         )
         brain.evaluate(
             test_data,

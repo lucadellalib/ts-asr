@@ -18,8 +18,8 @@ __all__ = ["DSS"]
 class DSS(nn.Module):
     """Simplified diagonal state space (DSS) layer.
 
-    Parameters
-    ----------
+    Arguments
+    ---------
     input_size:
         The input size (i.e. the number of features).
     state_size:
@@ -35,7 +35,6 @@ class DSS(nn.Module):
     Examples
     --------
     >>> import torch
-    >>>
     >>>
     >>> batch_size = 4
     >>> seq_length = 2048
@@ -86,8 +85,8 @@ class DSS(nn.Module):
     def forward(self, input: "torch.Tensor") -> "torch.Tensor":
         """Forward pass.
 
-        Parameters
-        ----------
+        Arguments
+        ---------
         input:
             The input, shape: ``[*batch_shape, seq_length, input_size]``.
 
