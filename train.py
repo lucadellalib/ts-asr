@@ -13,6 +13,9 @@ Authors
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
+# TODO: exclude loss from mixed precision if training is unstable
+# TODO: if_main_process during validation if problems occur in distributed mode
+
 import os
 import sys
 
@@ -29,33 +32,33 @@ class TSASR(sb.Brain):
     def compute_forward(self, batch, stage):
         """Forward computations from the waveform batches to the output probabilities."""
         batch = batch.to(self.device)
-        mixed_wavs, mixed_wav_lens = batch.mixed_sig
-        enroll_wavs, enroll_wav_lens = batch.enroll_sig
-        tokens_bos, _ = batch.tokens_bos
+        mixed_wavs, mixed_wavs_lens = batch.mixed_sig
+        enroll_wavs, enroll_wavs_lens = batch.enroll_sig
+        tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Extract speaker embedding (freeze speaker encoder)
         with torch.no_grad():
             feats = self.modules.speaker_feature_extractor(enroll_wavs)
-            feats = self.modules.speaker_normalizer(feats, enroll_wav_lens)
-            speaker_embs = self.modules.speaker_encoder(feats, enroll_wav_lens)
+            feats = self.modules.speaker_normalizer(feats, enroll_wavs_lens)
+            speaker_embs = self.modules.speaker_encoder(feats, enroll_wavs_lens)
         speaker_embs = self.modules.speaker_proj(speaker_embs)
 
         # Extract features
         feats = self.modules.feature_extractor(mixed_wavs)
-        feats = self.modules.normalizer(feats, mixed_wav_lens)
+        feats = self.modules.normalizer(feats, mixed_wavs_lens)
 
         # Add augmentation if specified
         if stage == sb.Stage.TRAIN:
             if hasattr(self.modules, "augmentation"):
                 feats = self.modules.augmentation(feats)
 
-        # Forward encoder
-        encoder_out = self.modules.encoder(feats, mixed_wav_lens, speaker_embs)
+        # Forward encoder/transcriber
+        encoder_out = self.modules.encoder(feats, mixed_wavs_lens, speaker_embs)
         encoder_out = self.modules.encoder_proj(encoder_out)
 
         # Forward decoder/predictor
         embs = self.modules.embedding(tokens_bos)
-        decoder_out, _ = self.modules.decoder(embs)
+        decoder_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens)
         decoder_out = self.modules.decoder_proj(decoder_out)
 
         # Forward joiner
@@ -85,14 +88,13 @@ class TSASR(sb.Brain):
                 hasattr(self.hparams, "ce_cost")
                 and self.hparams.epoch_counter.current <= self.hparams.num_ce_epochs
             ):
-                # Output layer for CTC log-probabilities
+                # Output layer for CE log-probabilities
                 ce_logits = self.modules.decoder_head(decoder_out)
                 ce_logprobs = ce_logits.log_softmax(dim=-1)
         elif stage == sb.Stage.VALID:
-            # During validation, run decoding only every
-            # valid_search_freq epochs to speed up training
+            # During validation, run decoding only every valid_search_freq epochs to speed up training
             if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
-                hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
+                hyps, scores, _, _ = self.hparams.greedy_searcher(encoder_out)
         else:
             hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
 
@@ -103,16 +105,16 @@ class TSASR(sb.Brain):
         transducer_logits, ctc_logprobs, ce_logprobs, hyps = predictions
 
         ids = batch.id
-        _, mixed_wav_lens = batch.mixed_sig
+        _, mixed_wavs_lens = batch.mixed_sig
         tokens, tokens_lens = batch.tokens
         tokens_eos, tokens_eos_lens = batch.tokens_eos
 
         loss = self.hparams.transducer_loss(
-            transducer_logits, tokens, mixed_wav_lens, tokens_lens
+            transducer_logits, tokens, mixed_wavs_lens, tokens_lens
         )
         if ctc_logprobs is not None:
             loss += self.hparams.ctc_weight * self.hparams.ctc_loss(
-                ctc_logprobs, tokens, mixed_wav_lens, tokens_lens
+                ctc_logprobs, tokens, mixed_wavs_lens, tokens_lens
             )
         if ce_logprobs is not None:
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
@@ -129,6 +131,11 @@ class TSASR(sb.Brain):
             self.wer_metric.append(ids, predicted_words, target_words)
 
         return loss
+
+    def on_fit_batch_end(self, batch, outputs, loss, should_step):
+        """Called after ``fit_batch()``, meant for calculating and logging metrics."""
+        if should_step:
+            self.hparams.lr_annealing(self.optimizer)
 
     def on_stage_start(self, stage, epoch):
         """Gets called at the beginning of each epoch."""
@@ -152,11 +159,10 @@ class TSASR(sb.Brain):
 
         # Perform end-of-iteration operations, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
-            old_lr, new_lr = self.hparams.lr_annealing(stage_stats["loss"])
-            new_lr = max(new_lr, self.hparams.min_lr)
-            sb.nnet.schedulers.update_learning_rate(self.optimizer, new_lr)
+            lr = self.hparams.lr_annealing.current_lr
+            steps = self.optimizer_step
             self.hparams.train_logger.log_stats(
-                stats_meta={"epoch": epoch, "lr": old_lr},
+                stats_meta={"epoch": epoch, "lr": lr, "steps": steps},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )

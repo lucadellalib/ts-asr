@@ -55,10 +55,8 @@ character_coverage: 1.0
 blank_index: 0  # Index(blank/bos/eos) = 0
 
 lr: 0.0008
-min_lr: 0.000001
-improvement_threshold: 0.0025
-annealing_factor: 0.8
-patient: 3
+weight_decay: 0.01
+warmup_steps: 25000
 
 nonfinite_patience: 10
 max_grad_norm: 5.0
@@ -77,6 +75,7 @@ s4_layer_type: !name:models.layers.dss.DSS
 s4_layer_kwargs:
     state_size: 1024
 
+#embedding_dim: 128
 decoder_neurons: 512
 decoder_num_layers: 1
 
@@ -84,7 +83,7 @@ joint_dim: 640
 
 # Decoding parameters
 valid_search_freq: 5
-beam_size: 1
+beam_size: 5
 nbest: 1
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
@@ -151,6 +150,7 @@ encoder_proj: !new:speechbrain.nnet.linear.Linear
 
 embedding: !new:speechbrain.nnet.embedding.Embedding
     num_embeddings: !ref <vocab_size>
+    #embedding_dim: !ref <embedding_dim>
     consider_as_one_hot: True
     blank_id: !ref <blank_index>
 
@@ -167,7 +167,6 @@ decoder_proj: !new:speechbrain.nnet.linear.Linear
 #decoder_head: !new:speechbrain.nnet.linear.Linear
 #    input_size: !ref <joint_dim>
 #    n_neurons: !ref <vocab_size>
-#    bias: False
 
 joiner: !new:speechbrain.nnet.transducer.transducer_joint.Transducer_joint
     joint: sum  # [sum | concat]
@@ -176,7 +175,6 @@ joiner: !new:speechbrain.nnet.transducer.transducer_joint.Transducer_joint
 transducer_head: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <joint_dim>
     n_neurons: !ref <vocab_size>
-    bias: False
 
 modules:
     speaker_feature_extractor: !ref <speaker_feature_extractor>
@@ -216,16 +214,25 @@ transducer_loss: !name:speechbrain.nnet.losses.transducer_loss
 # Optimizers
 opt_class: !name:torch.optim.AdamW
     lr: !ref <lr>
+    betas: (0.9, 0.98)
+    eps: 1.e-8
+    weight_decay: !ref <weight_decay>
 
-lr_annealing: !new:speechbrain.nnet.schedulers.NewBobScheduler
-    initial_value: !ref <lr>
-    improvement_threshold: !ref <improvement_threshold>
-    annealing_factor: !ref <annealing_factor>
-    patient: !ref <patient>
+lr_annealing: !new:speechbrain.nnet.schedulers.NoamScheduler
+   lr_initial: !ref <lr>
+   n_warmup_steps: !ref <warmup_steps>
 
 # Searchers
+greedy_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
+    decode_network_lst: [!ref <embedding>, !ref <decoder>, !ref <decoder_proj>]
+    tjoint: !ref <joiner>
+    classifier_network: [!ref <transducer_head>]
+    blank_id: !ref <blank_index>
+    beam_size: 1
+    nbest: 1
+
 beam_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
-    decode_network_lst: [!ref <embedding>, !ref <decoder>]
+    decode_network_lst: [!ref <embedding>, !ref <decoder>, !ref <decoder_proj>]
     tjoint: !ref <joiner>
     classifier_network: [!ref <transducer_head>]
     blank_id: !ref <blank_index>
