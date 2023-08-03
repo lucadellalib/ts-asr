@@ -2,7 +2,7 @@ This project incorporates components from the projects listed below. The origina
 
 #############################################################################################################################################################
 
-1. Code in {train, models/crdnn, models/transformer}.py, {conformer-t, rnn-t, s4-t}.yaml adapted from:
+1. Code in {train, models/{crdnn, s4, transformer}}.py, {conformer-t, rnn-t, s4-t}.yaml adapted from:
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/speechbrain/lobes/models/CRDNN/CRDNN.py
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/speechbrain/lobes/models/transformer/TransformerASR.py

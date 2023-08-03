@@ -93,6 +93,9 @@ nbest: 1
 state_beam: 2.3
 expand_beam: 2.3
 
+# Pretrain
+run_pretrainer: True
+
 # Modules
 speaker_feature_extractor: !new:speechbrain.lobes.features.Fbank
     n_mels: 80
