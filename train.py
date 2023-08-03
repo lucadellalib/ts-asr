@@ -15,6 +15,8 @@ Authors
 
 # TODO: if_main_process during validation if problems occur in distributed mode
 # TODO: check causality
+# TODO: check where to inject embeddings
+# TODO: train speaker encoder from scratch?
 
 import os
 import sys
