@@ -171,19 +171,19 @@ class Transformer(TransformerInterface):
             b, t, ch1, ch2 = src.shape
             src = src.reshape(b, t, ch1 * ch2)
 
-        src_key_padding_mask, src_mask = self._make_masks(src, wav_len)
+        # Inject speaker embedding
+        if speaker_embs is not None:
+            src *= speaker_embs
 
+        src_key_padding_mask, src_mask = self._make_masks(src, wav_len)
         src = self.custom_src_module(src)
+
         # Add positional encoding to queries if are sinusoidal
         if self.attention_type == "RelPosMHAXL":
             pos_embs_encoder = self.positional_encoding(src)
         elif self.positional_encoding_type == "fixed_abs_sine":
             pos_embs_encoder = None
             src += self.positional_encoding(src)  # Add the encodings here
-
-        # Inject speaker embedding
-        if speaker_embs is not None:
-            src *= speaker_embs
 
         encoder_out, attention_lst = self.encoder(
             src=src,

@@ -100,14 +100,17 @@ class CRDNN(SBCRDNN):
         speaker_embs : torch.Tensor, optional
             The speaker embedding.
 
-        """
-        for layer in self.values():
-            # Inject speaker embedding before first RNN layer
-            if speaker_embs is not None:
-                if hasattr(layer, "rnn"):
-                    x += speaker_embs[..., None, :]
-                    speaker_embs = None
+        Returns
+        -------
+        torch.Tensor
+            The output.
 
+        """
+        # Inject speaker embedding
+        if speaker_embs is not None:
+            x *= speaker_embs
+
+        for layer in self.values():
             x = layer(x)
             if isinstance(x, tuple):
                 x = x[0]

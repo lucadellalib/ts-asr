@@ -107,7 +107,7 @@ speaker_encoder: !new:speechbrain.lobes.models.ECAPA_TDNN.ECAPA_TDNN
 
 speaker_proj: !new:speechbrain.nnet.linear.Linear
     input_size: 192  # Must be set equal to the speaker encoder embedding size (192 for ECAPA-TDNN)
-    n_neurons: !ref <d_model>
+    n_neurons: !ref <n_mels>
 
 feature_extractor: !new:speechbrain.lobes.features.Fbank
     sample_rate: !ref <sample_rate>
@@ -268,7 +268,6 @@ checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
     checkpoints_dir: !ref <save_folder>
     recoverables:
         model: !ref <model>
-        normalizerr: !ref <normalizer>
         scheduler: !ref <lr_annealing>
         counter: !ref <epoch_counter>
 

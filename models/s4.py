@@ -144,15 +144,14 @@ class S4(nn.Module):
             b, t, ch1, ch2 = src.shape
             src = src.reshape(b, t, ch1 * ch2)
 
-        src_key_padding_mask, _ = self._make_masks(src, wav_len)
-
-        src = self.custom_src_module(src)
-
         # Inject speaker embedding
         if speaker_embs is not None:
             src *= speaker_embs
 
-        encoder_out = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask,)
+        src_key_padding_mask, _ = self._make_masks(src, wav_len)
+        src = self.custom_src_module(src)
+
+        encoder_out = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask)
 
         return encoder_out
 
