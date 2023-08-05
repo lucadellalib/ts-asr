@@ -30,14 +30,14 @@ pip install -r requirements.txt
 Navigate to `<path-to-repository>`, open a terminal and run:
 
 ```bash
-python train.py hparams/<config>.yaml --data_folder <path-to-data-folder>
+python train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder>
 ```
 
 To use multiple GPUs on the same node, run:
 
 ```bash
 python -m torch.distributed.launch --nproc_per_node=<num-gpus> \
-train.py hparams/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
+train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
 ```
 
 **NOTE**: a single GPU is used for inference, even if multiple GPUs are available.

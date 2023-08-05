@@ -1,12 +1,12 @@
 # ############################################################################
-# Model: S4-T
+# Model: Conformer-T
 # Authors: Luca Della Libera 2023
 # ############################################################################
 
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/hparams/conformer_transducer.yaml
 
-experiment_name: S4-T
+experiment_name: LibriSpeech/Conformer-T
 
 # Seed needs to be set at top of YAML
 seed: 0
@@ -14,16 +14,13 @@ __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Data preparation
 data_folder: !PLACEHOLDER
-splits:
-    - dev-clean-1mix
-    - dev-clean-2mix
-    - dev-clean-3mix
-    - test-clean-1mix
-    - test-clean-2mix
-    - test-clean-3mix
-train_json: !ref <data_folder>/dev.json
-valid_json: !ref <data_folder>/test.json
-test_json: !ref <data_folder>/test.json
+train_splits: ["train-clean-100"]
+dev_splits: ["dev-clean"]
+test_splits: ["test-clean"]
+train_csv: !ref <save_folder>/train.csv
+valid_csv: !ref <save_folder>/dev-clean.csv
+test_csv: !ref <save_folder>/test-clean.csv
+skip_prep: False
 
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>
@@ -67,13 +64,15 @@ ckpt_interval_minutes: 600
 activation: !name:torch.nn.LeakyReLU
 dropout: 0.0
 d_model: 512
+nhead: 4
 num_encoder_layers: 10
 d_ffn: 2048
 kernel_size: 31
+positional_encoding: fixed_abs_sine
+normalize_before: True
+attention_type: RelPosMHAXL
+max_length: 2500
 causal: True
-s4_layer_type: !name:models.layers.dss.DSS
-s4_layer_kwargs:
-    state_size: 1024
 
 #embedding_dim: 128
 decoder_neurons: 512
@@ -93,25 +92,6 @@ expand_beam: 2.3
 run_pretrainer: True
 
 # Modules
-speaker_feature_extractor: !new:speechbrain.lobes.features.Fbank
-    n_mels: 80
-
-speaker_normalizer: !new:speechbrain.processing.features.InputNormalization
-    norm_type: sentence
-    std_norm: False
-
-speaker_encoder: !new:speechbrain.lobes.models.ECAPA_TDNN.ECAPA_TDNN
-    input_size: 80
-    channels: [1024, 1024, 1024, 1024, 3072]
-    kernel_sizes: [5, 3, 3, 3, 1]
-    dilations: [1, 2, 3, 4, 1]
-    attention_channels: 128
-    lin_neurons: 192
-
-speaker_proj: !new:speechbrain.nnet.linear.Linear
-    input_size: 192  # Must be set equal to the speaker encoder embedding size (192 for ECAPA-TDNN)
-    n_neurons: !ref <n_mels>
-
 feature_extractor: !new:speechbrain.lobes.features.Fbank
     sample_rate: !ref <sample_rate>
     n_fft: !ref <n_fft>
@@ -132,16 +112,19 @@ augmentation: !new:speechbrain.lobes.augment.SpecAugment
     freq_mask_width: 30
     time_mask_width: 40
 
-encoder: !new:models.s4.S4
+encoder: !new:models.transformer.Transformer
     input_size: !ref <n_mels>
     d_model: !ref <d_model>
+    nhead: !ref <nhead>
     num_encoder_layers: !ref <num_encoder_layers>
     d_ffn: !ref <d_ffn>
     dropout: !ref <dropout>
+    positional_encoding: !ref <positional_encoding>
     kernel_size: !ref <kernel_size>
+    normalize_before: !ref <normalize_before>
+    attention_type: !ref <attention_type>
+    max_length: !ref <max_length>
     causal: !ref <causal>
-    s4_layer_type: !ref <s4_layer_type>
-    s4_layer_kwargs: !ref <s4_layer_kwargs>
 
 encoder_proj: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <d_model>
@@ -180,10 +163,6 @@ transducer_head: !new:speechbrain.nnet.linear.Linear
     n_neurons: !ref <vocab_size>
 
 modules:
-    speaker_feature_extractor: !ref <speaker_feature_extractor>
-    speaker_normalizer: !ref <speaker_normalizer>
-    speaker_encoder: !ref <speaker_encoder>
-    speaker_proj: !ref <speaker_proj>
     feature_extractor: !ref <feature_extractor>
     normalizer: !ref <normalizer>
     augmentation: !ref <augmentation>
@@ -198,8 +177,7 @@ modules:
     transducer_head: !ref <transducer_head>
 
 model: !new:torch.nn.ModuleList
-    [[!ref <speaker_feature_extractor>, !ref <speaker_normalizer>, !ref <speaker_encoder>, !ref <speaker_proj>,
-      !ref <feature_extractor>, !ref <normalizer>, !ref <augmentation>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
+    [[!ref <feature_extractor>, !ref <normalizer>, !ref <augmentation>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
       !ref <embedding>, !ref <decoder>, !ref <decoder_proj>, #!ref <decoder_head>,
       !ref <joiner>, !ref <transducer_head>]]
 
@@ -281,6 +259,4 @@ train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
 pretrainer: !new:speechbrain.utils.parameter_transfer.Pretrainer
     collect_in: !ref <save_folder>
     loadables:
-        speaker_encoder: !ref <speaker_encoder>
     paths:
-        speaker_encoder: speechbrain/spkrec-ecapa-voxceleb/embedding_model.ckpt

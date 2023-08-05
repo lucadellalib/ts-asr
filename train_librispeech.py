@@ -1,10 +1,9 @@
 #!/usr/bin/env/python
 
-"""Recipe for training a transducer-based TS-ASR system
-(see https://arxiv.org/abs/2209.04175).
+"""Recipe for training a transducer-based ASR system.
 
 To run this recipe, do the following:
-> python train.py hparams/<config>.yaml
+> python train_librispeech.py hparams/LibriSpeech/<config>.yaml
 
 Authors
  * Luca Della Libera 2023
@@ -12,11 +11,6 @@ Authors
 
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
-
-# TODO: if_main_process during validation if problems occur in distributed mode
-# TODO: check causality
-# TODO: check where to inject embeddings
-# TODO: train speaker encoder from scratch?
 
 import os
 import sys
@@ -30,24 +24,16 @@ from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import if_main_process, run_on_main
 
 
-class TSASR(sb.Brain):
+class ASR(sb.Brain):
     def compute_forward(self, batch, stage):
         """Forward computations from the waveform batches to the output probabilities."""
         batch = batch.to(self.device)
-        mixed_wavs, mixed_wavs_lens = batch.mixed_sig
-        enroll_wavs, enroll_wavs_lens = batch.enroll_sig
+        wavs, wavs_lens = batch.sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
-        # Extract speaker embedding (freeze speaker encoder)
-        with torch.set_grad_enabled(not self.hparams.run_pretrainer):
-            feats = self.modules.speaker_feature_extractor(enroll_wavs)
-            feats = self.modules.speaker_normalizer(feats, enroll_wavs_lens)
-            speaker_embs = self.modules.speaker_encoder(feats, enroll_wavs_lens)
-        speaker_embs = self.modules.speaker_proj(speaker_embs)
-
         # Extract features
-        feats = self.modules.feature_extractor(mixed_wavs)
-        feats = self.modules.normalizer(feats, mixed_wavs_lens)
+        feats = self.modules.feature_extractor(wavs)
+        feats = self.modules.normalizer(feats, wavs_lens)
 
         # Add augmentation if specified
         if stage == sb.Stage.TRAIN:
@@ -55,7 +41,7 @@ class TSASR(sb.Brain):
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder/transcriber
-        encoder_out = self.modules.encoder(feats, mixed_wavs_lens, speaker_embs)
+        encoder_out = self.modules.encoder(feats, wavs_lens)
         encoder_out = self.modules.encoder_proj(encoder_out)
 
         # Forward decoder/predictor
@@ -107,16 +93,16 @@ class TSASR(sb.Brain):
         transducer_logits, ctc_logprobs, ce_logprobs, hyps = predictions
 
         ids = batch.id
-        _, mixed_wavs_lens = batch.mixed_sig
+        _, wavs_lens = batch.sig
         tokens, tokens_lens = batch.tokens
         tokens_eos, tokens_eos_lens = batch.tokens_eos
 
         loss = self.hparams.transducer_loss(
-            transducer_logits, tokens, mixed_wavs_lens, tokens_lens
+            transducer_logits, tokens, wavs_lens, tokens_lens
         )
         if ctc_logprobs is not None:
             loss += self.hparams.ctc_weight * self.hparams.ctc_loss(
-                ctc_logprobs, tokens, mixed_wavs_lens, tokens_lens
+                ctc_logprobs, tokens, wavs_lens, tokens_lens
             )
         if ce_logprobs is not None:
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
@@ -189,8 +175,8 @@ def dataio_prepare(hparams, tokenizer):
     # 1. Define datasets
     data_folder = hparams["data_folder"]
 
-    train_data = sb.dataio.dataset.DynamicItemDataset.from_json(
-        json_path=hparams["train_json"], replacements={"DATA_ROOT": data_folder},
+    train_data = sb.dataio.dataset.DynamicItemDataset.from_csv(
+        csv_path=hparams["train_csv"], replacements={"DATA_ROOT": data_folder},
     )
 
     if hparams["sorting"] == "ascending":
@@ -211,14 +197,14 @@ def dataio_prepare(hparams, tokenizer):
     else:
         raise NotImplementedError("`sorting` must be random, ascending or descending")
 
-    valid_data = sb.dataio.dataset.DynamicItemDataset.from_json(
-        json_path=hparams["valid_json"], replacements={"DATA_ROOT": data_folder},
+    valid_data = sb.dataio.dataset.DynamicItemDataset.from_csv(
+        csv_path=hparams["valid_csv"], replacements={"DATA_ROOT": data_folder},
     )
     # Sort the validation data so it is faster to validate
     valid_data = valid_data.filtered_sorted(sort_key="duration", reverse=True)
 
-    test_data = sb.dataio.dataset.DynamicItemDataset.from_json(
-        json_path=hparams["test_json"], replacements={"DATA_ROOT": data_folder},
+    test_data = sb.dataio.dataset.DynamicItemDataset.from_csv(
+        csv_path=hparams["test_csv"], replacements={"DATA_ROOT": data_folder},
     )
     # Sort the test data so it is faster to test
     test_data = test_data.filtered_sorted(sort_key="duration", reverse=True)
@@ -226,40 +212,33 @@ def dataio_prepare(hparams, tokenizer):
     datasets = [train_data, valid_data, test_data]
 
     # 2. Define audio pipeline
-    @sb.utils.data_pipeline.takes("mixed_wav", "enroll_wav")
-    @sb.utils.data_pipeline.provides("mixed_sig", "enroll_sig")
-    def audio_pipeline(mixed_wav, enroll_wav):
-        # Mixed signal
-        sample_rate = torchaudio.info(mixed_wav).sample_rate
-        mixed_sig = sb.dataio.dataio.read_audio(mixed_wav)
-        resampled_mixed_sig = torchaudio.transforms.Resample(
+    @sb.utils.data_pipeline.takes("wav")
+    @sb.utils.data_pipeline.provides("sig")
+    def audio_pipeline(wav):
+        # Signal
+        sample_rate = torchaudio.info(wav).sample_rate
+        sig = sb.dataio.dataio.read_audio(wav)
+        resampled_sig = torchaudio.transforms.Resample(
             sample_rate, hparams["sample_rate"],
-        )(mixed_sig)
-        yield resampled_mixed_sig
-        # Enrollment signal
-        sample_rate = torchaudio.info(enroll_wav).sample_rate
-        enroll_sig = sb.dataio.dataio.read_audio(enroll_wav)
-        resampled_enroll_sig = torchaudio.transforms.Resample(
-            sample_rate, hparams["sample_rate"],
-        )(enroll_sig)
-        yield resampled_enroll_sig
+        )(sig)
+        return resampled_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
 
     # 3. Define text pipeline
-    @sb.utils.data_pipeline.takes("transcription")
+    @sb.utils.data_pipeline.takes("wrd")
     @sb.utils.data_pipeline.provides(
         "tokens_bos", "tokens_eos", "tokens", "target_words",
     )
-    def text_pipeline(transcription):
-        tokens_list = tokenizer.sp.encode_as_ids(transcription)
+    def text_pipeline(wrd):
+        tokens_list = tokenizer.sp.encode_as_ids(wrd)
         tokens_bos = torch.LongTensor([hparams["blank_index"]] + (tokens_list))
         yield tokens_bos
         tokens_eos = torch.LongTensor(tokens_list + [hparams["blank_index"]])
         yield tokens_eos
         tokens = torch.LongTensor(tokens_list)
         yield tokens
-        target_words = transcription.split(" ")
+        target_words = wrd.split(" ")
         # When `ref_tokens` is an empty string add dummy space
         # to avoid division by 0 when computing WER/CER
         for i, char in enumerate(target_words):
@@ -271,16 +250,7 @@ def dataio_prepare(hparams, tokenizer):
 
     # 4. Set output
     sb.dataio.dataset.set_output_keys(
-        datasets,
-        [
-            "id",
-            "mixed_sig",
-            "enroll_sig",
-            "tokens_bos",
-            "tokens_eos",
-            "tokens",
-            "target_words",
-        ],
+        datasets, ["id", "sig", "tokens_bos", "tokens_eos", "tokens", "target_words",],
     )
     return train_data, valid_data, test_data
 
@@ -302,27 +272,36 @@ if __name__ == "__main__":
     )
 
     # Dataset preparation
-    from librispeech_mix_prepare import prepare_librispeech_mix  # noqa
+    from librispeech_prepare import prepare_librispeech  # noqa
 
     # Due to DDP, do the preparation ONLY on the main Python process
     run_on_main(
-        prepare_librispeech_mix,
-        kwargs={"data_folder": hparams["data_folder"], "splits": hparams["splits"]},
+        prepare_librispeech,
+        kwargs={
+            "data_folder": hparams["data_folder"],
+            "tr_splits": hparams["train_splits"],
+            "dev_splits": hparams["dev_splits"],
+            "te_splits": hparams["test_splits"],
+            "save_folder": hparams["save_folder"],
+            "merge_lst": hparams["train_splits"],
+            "merge_name": "train.csv",
+            "skip_prep": hparams["skip_prep"],
+        },
     )
 
     # Define tokenizer and loading it
     tokenizer = SentencePiece(
         model_dir=hparams["save_folder"],
         vocab_size=hparams["vocab_size"],
-        annotation_train=hparams["train_json"],
-        annotation_read="transcription",
+        annotation_train=hparams["train_csv"],
+        annotation_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=hparams["character_coverage"],
-        annotation_format="json",
+        annotation_format="csv",
     )
 
     # Create the datasets objects as well as tokenization and encoding
-    train_data, valid_data, _ = dataio_prepare(hparams, tokenizer)
+    train_data, valid_data, test_data = dataio_prepare(hparams, tokenizer)
 
     # Download the pretrained models
     if hparams["run_pretrainer"]:
@@ -330,7 +309,7 @@ if __name__ == "__main__":
         hparams["pretrainer"].load_collected()
 
     # Trainer initialization
-    brain = TSASR(
+    brain = ASR(
         modules=hparams["modules"],
         opt_class=hparams["opt_class"],
         hparams=hparams,
@@ -350,22 +329,8 @@ if __name__ == "__main__":
         valid_loader_kwargs=hparams["valid_dataloader_kwargs"],
     )
 
-    # Test on each split separately
-    for split in ["test-clean-1mix", "test-clean-2mix", "test-clean-3mix"]:
-        # Due to DDP, do the preparation ONLY on the main python process
-        run_on_main(
-            prepare_librispeech_mix,
-            kwargs={"data_folder": hparams["data_folder"], "splits": [split]},
-        )
-
-        # Create the datasets objects as well as tokenization and encoding
-        _, _, test_data = dataio_prepare(hparams, tokenizer)
-
-        brain.hparams.wer_file = os.path.join(
-            hparams["output_folder"], f"wer_{split}.txt"
-        )
-        brain.evaluate(
-            test_data,
-            min_key="WER",
-            test_loader_kwargs=hparams["test_dataloader_kwargs"],
-        )
+    # Test
+    brain.hparams.wer_file = os.path.join(hparams["output_folder"], f"wer.txt")
+    brain.evaluate(
+        test_data, min_key="WER", test_loader_kwargs=hparams["test_dataloader_kwargs"],
+    )

@@ -1,17 +1,14 @@
-#!/usr/bin/env python3
-
 """LibriSpeechMix data preparation.
 
 Authors
  * Luca Della Libera 2023
 """
 
-import argparse
 import json
 import logging
 import os
 from collections import defaultdict
-from typing import Sequence
+from typing import Optional, Sequence
 
 import torchaudio
 
@@ -37,7 +34,9 @@ _DEFAULT_SPLITS = (
 
 
 def prepare_librispeech_mix(
-    data_folder: "str", splits: "Sequence[str]" = _DEFAULT_SPLITS,
+    data_folder: "str",
+    save_folder: "Optional[str]" = None,
+    splits: "Sequence[str]" = _DEFAULT_SPLITS,
 ) -> "None":
     """Prepare data manifest JSON files for LibriSpeechMix dataset
     (see https://github.com/NaoyukiKanda/LibriSpeechMix).
@@ -46,6 +45,10 @@ def prepare_librispeech_mix(
     ---------
     data_folder:
         The path to the dataset folder.
+    save_folder:
+        The path to the folder where the data
+        manifest JSON files will be stored.
+        Default to ``data_folder``.
     splits:
         The dataset splits to load.
         Splits with the same prefix are merged into a single
@@ -64,6 +67,8 @@ def prepare_librispeech_mix(
     >>> prepare_librispeech_mix( "LibriSpeechMix", ["dev-clean-2mix", "test-clean-2mix"])
 
     """
+    if not save_folder:
+        save_folder = data_folder
     if not splits:
         raise ValueError(f"`splits` ({splits}) must be non-empty")
 
@@ -124,13 +129,13 @@ def prepare_librispeech_mix(
                             output_entry = {
                                 "mixed_wav": mixed_wav,
                                 "enroll_wav": enroll_wav,
-                                "transcription": text,
+                                "wrd": text,
                                 "duration": duration,
                             }
                             output_entries[ID_enroll] = output_entry
 
         # Write output JSON
-        output_json = os.path.join(data_folder, f"{group_name}.json")
+        output_json = os.path.join(save_folder, f"{group_name}.json")
         _LOGGER.info(f"Writing {output_json}...")
         with open(output_json, "w", encoding="utf-8") as fw:
             json.dump(output_entries, fw, ensure_ascii=False, indent=4)
@@ -139,23 +144,3 @@ def prepare_librispeech_mix(
         "----------------------------------------------------------------------",
     )
     _LOGGER.info("Done!")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Prepare LibriSpeechMix dataset")
-    parser.add_argument(
-        "data_folder", help="path to the dataset folder",
-    )
-    parser.add_argument(
-        "-s",
-        "--splits",
-        nargs="+",
-        default=_DEFAULT_SPLITS,
-        help=(
-            "dataset splits to load. Splits with the same prefix are merged into a "
-            'single JSON file (e.g. "dev-clean-1mix" and "dev-clean-2mix").'
-        ),
-    )
-
-    args = parser.parse_args()
-    prepare_librispeech_mix(args.data_folder, args.splits)

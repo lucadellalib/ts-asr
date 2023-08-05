@@ -6,7 +6,7 @@
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/hparams/conformer_transducer.yaml
 
-experiment_name: Conformer-T
+experiment_name: LibriSpeechMix/Conformer-T
 
 # Seed needs to be set at top of YAML
 seed: 0
@@ -21,9 +21,9 @@ splits:
     - test-clean-1mix
     - test-clean-2mix
     - test-clean-3mix
-train_json: !ref <data_folder>/dev.json
-valid_json: !ref <data_folder>/test.json
-test_json: !ref <data_folder>/test.json
+train_json: !ref <save_folder>/dev.json
+valid_json: !ref <save_folder>/test.json
+test_json: !ref <save_folder>/test.json
 
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>

@@ -1,0 +1,286 @@
+# ############################################################################
+# Model: S4-T
+# Authors: Luca Della Libera 2023
+# ############################################################################
+
+# Adapted from:
+# https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/hparams/conformer_transducer.yaml
+
+experiment_name: LibriSpeechMix/S4-T
+
+# Seed needs to be set at top of YAML
+seed: 0
+__set_seed: !apply:torch.manual_seed [!ref <seed>]
+
+# Data preparation
+data_folder: !PLACEHOLDER
+splits:
+    - dev-clean-1mix
+    - dev-clean-2mix
+    - dev-clean-3mix
+    - test-clean-1mix
+    - test-clean-2mix
+    - test-clean-3mix
+train_json: !ref <save_folder>/dev.json
+valid_json: !ref <save_folder>/test.json
+test_json: !ref <save_folder>/test.json
+
+# Output directories
+output_folder: !ref results/<experiment_name>/<seed>
+save_folder: !ref <output_folder>/save
+
+# Preprocessing parameters
+sample_rate: 16000
+sorting: descending  # Fail-fast in case of OOM due to long utterances
+n_fft: 400
+n_mels: 80
+
+# Training parameters
+num_epochs: 100
+#num_ctc_epochs: 2
+#ctc_weight: 0.33
+#num_ce_epochs: 2
+#ce_weight: 0.33
+
+train_batch_size: 4
+valid_batch_size: 8
+test_batch_size: !ref <valid_batch_size>
+train_num_workers: 6
+valid_num_workers: 6
+test_num_workers: !ref <valid_num_workers>
+
+vocab_size: 29  # If token_type=char, must be set equal to the number of found characters
+token_type: char  # ["unigram", "bpe", "char"]
+character_coverage: 1.0
+blank_index: 0  # Index(blank/bos/eos) = 0
+
+lr: 0.0008
+weight_decay: 0.01
+warmup_steps: 25000
+
+nonfinite_patience: 10
+max_grad_norm: 5.0
+auto_mix_prec: True
+ckpt_interval_minutes: 600
+
+# Model parameters
+activation: !name:torch.nn.LeakyReLU
+dropout: 0.0
+d_model: 512
+num_encoder_layers: 10
+d_ffn: 2048
+kernel_size: 31
+causal: True
+s4_layer_type: !name:models.layers.dss.DSS
+s4_layer_kwargs:
+    state_size: 1024
+
+#embedding_dim: 128
+decoder_neurons: 512
+decoder_num_layers: 1
+
+joint_dim: 640
+
+# Decoding parameters
+valid_search_freq: 5
+beam_size: 5
+nbest: 1
+# state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
+state_beam: 2.3
+expand_beam: 2.3
+
+# Pretrain
+run_pretrainer: True
+
+# Modules
+speaker_feature_extractor: !new:speechbrain.lobes.features.Fbank
+    n_mels: 80
+
+speaker_normalizer: !new:speechbrain.processing.features.InputNormalization
+    norm_type: sentence
+    std_norm: False
+
+speaker_encoder: !new:speechbrain.lobes.models.ECAPA_TDNN.ECAPA_TDNN
+    input_size: 80
+    channels: [1024, 1024, 1024, 1024, 3072]
+    kernel_sizes: [5, 3, 3, 3, 1]
+    dilations: [1, 2, 3, 4, 1]
+    attention_channels: 128
+    lin_neurons: 192
+
+speaker_proj: !new:speechbrain.nnet.linear.Linear
+    input_size: 192  # Must be set equal to the speaker encoder embedding size (192 for ECAPA-TDNN)
+    n_neurons: !ref <n_mels>
+
+feature_extractor: !new:speechbrain.lobes.features.Fbank
+    sample_rate: !ref <sample_rate>
+    n_fft: !ref <n_fft>
+    n_mels: !ref <n_mels>
+
+normalizer: !new:speechbrain.processing.features.InputNormalization
+    norm_type: global
+
+augmentation: !new:speechbrain.lobes.augment.SpecAugment
+    time_warp: True
+    time_warp_window: 5
+    time_warp_mode: bicubic
+    freq_mask: True
+    n_freq_mask: 2
+    time_mask: True
+    n_time_mask: 2
+    replace_with_zero: False
+    freq_mask_width: 30
+    time_mask_width: 40
+
+encoder: !new:models.s4.S4
+    input_size: !ref <n_mels>
+    d_model: !ref <d_model>
+    num_encoder_layers: !ref <num_encoder_layers>
+    d_ffn: !ref <d_ffn>
+    dropout: !ref <dropout>
+    kernel_size: !ref <kernel_size>
+    causal: !ref <causal>
+    s4_layer_type: !ref <s4_layer_type>
+    s4_layer_kwargs: !ref <s4_layer_kwargs>
+
+encoder_proj: !new:speechbrain.nnet.linear.Linear
+    input_size: !ref <d_model>
+    n_neurons: !ref <joint_dim>
+
+#encoder_head: !new:speechbrain.nnet.linear.Linear
+#    input_size: !ref <joint_dim>
+#    n_neurons: !ref <vocab_size>
+
+embedding: !new:speechbrain.nnet.embedding.Embedding
+    num_embeddings: !ref <vocab_size>
+    #embedding_dim: !ref <embedding_dim>
+    consider_as_one_hot: True
+    blank_id: !ref <blank_index>
+
+decoder: !new:speechbrain.nnet.RNN.GRU
+    input_shape: [null, null, !ref <vocab_size> - 1]
+    hidden_size: !ref <decoder_neurons>
+    num_layers: !ref <decoder_num_layers>
+    re_init: True
+
+decoder_proj: !new:speechbrain.nnet.linear.Linear
+    input_size: !ref <decoder_neurons>
+    n_neurons: !ref <joint_dim>
+
+#decoder_head: !new:speechbrain.nnet.linear.Linear
+#    input_size: !ref <joint_dim>
+#    n_neurons: !ref <vocab_size>
+
+joiner: !new:speechbrain.nnet.transducer.transducer_joint.Transducer_joint
+    joint: sum  # [sum | concat]
+    nonlinearity: !ref <activation>
+
+transducer_head: !new:speechbrain.nnet.linear.Linear
+    input_size: !ref <joint_dim>
+    n_neurons: !ref <vocab_size>
+
+modules:
+    speaker_feature_extractor: !ref <speaker_feature_extractor>
+    speaker_normalizer: !ref <speaker_normalizer>
+    speaker_encoder: !ref <speaker_encoder>
+    speaker_proj: !ref <speaker_proj>
+    feature_extractor: !ref <feature_extractor>
+    normalizer: !ref <normalizer>
+    augmentation: !ref <augmentation>
+    encoder: !ref <encoder>
+    encoder_proj: !ref <encoder_proj>
+    #encoder_head: !ref <encoder_head>
+    embedding: !ref <embedding>
+    decoder: !ref <decoder>
+    decoder_proj: !ref <decoder_proj>
+    #decoder_head: !ref <decoder_head>
+    joiner: !ref <joiner>
+    transducer_head: !ref <transducer_head>
+
+model: !new:torch.nn.ModuleList
+    [[!ref <speaker_feature_extractor>, !ref <speaker_normalizer>, !ref <speaker_encoder>, !ref <speaker_proj>,
+      !ref <feature_extractor>, !ref <normalizer>, !ref <augmentation>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
+      !ref <embedding>, !ref <decoder>, !ref <decoder_proj>, #!ref <decoder_head>,
+      !ref <joiner>, !ref <transducer_head>]]
+
+# Loss functions
+transducer_loss: !name:speechbrain.nnet.losses.transducer_loss
+    use_torchaudio: True
+    blank_index: !ref <blank_index>
+
+#ctc_loss: !name:speechbrain.nnet.losses.ctc_loss
+#    blank_index: !ref <blank_index>
+
+#ce_loss: !name:speechbrain.nnet.losses.nll_loss
+#    label_smoothing: 0.1
+
+# Optimizers
+opt_class: !name:torch.optim.AdamW
+    lr: !ref <lr>
+    betas: (0.9, 0.98)
+    eps: 1.e-8
+    weight_decay: !ref <weight_decay>
+
+lr_annealing: !new:speechbrain.nnet.schedulers.NoamScheduler
+   lr_initial: !ref <lr>
+   n_warmup_steps: !ref <warmup_steps>
+
+# Searchers
+greedy_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
+    decode_network_lst: [!ref <embedding>, !ref <decoder>, !ref <decoder_proj>]
+    tjoint: !ref <joiner>
+    classifier_network: [!ref <transducer_head>]
+    blank_id: !ref <blank_index>
+    beam_size: 1
+    nbest: 1
+
+beam_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
+    decode_network_lst: [!ref <embedding>, !ref <decoder>, !ref <decoder_proj>]
+    tjoint: !ref <joiner>
+    classifier_network: [!ref <transducer_head>]
+    blank_id: !ref <blank_index>
+    beam_size: !ref <beam_size>
+    nbest: !ref <nbest>
+    state_beam: !ref <state_beam>
+    expand_beam: !ref <expand_beam>
+
+# Dataloader options
+train_dataloader_kwargs:
+    batch_size: !ref <train_batch_size>
+    num_workers: !ref <train_num_workers>
+
+valid_dataloader_kwargs:
+    batch_size: !ref <valid_batch_size>
+    num_workers: !ref <valid_num_workers>
+
+test_dataloader_kwargs:
+    batch_size: !ref <test_batch_size>
+    num_workers: !ref <test_num_workers>
+
+# Performance metrics
+wer_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats
+
+cer_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats
+    split_tokens: True
+
+# Counters, checkpointers, loggers, etc.
+epoch_counter: !new:speechbrain.utils.epoch_loop.EpochCounter
+    limit: !ref <num_epochs>
+
+checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
+    checkpoints_dir: !ref <save_folder>
+    recoverables:
+        model: !ref <model>
+        scheduler: !ref <lr_annealing>
+        counter: !ref <epoch_counter>
+
+train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
+    save_file: !ref <output_folder>/train_log.txt
+
+# Pretrainer
+pretrainer: !new:speechbrain.utils.parameter_transfer.Pretrainer
+    collect_in: !ref <save_folder>
+    loadables:
+        speaker_encoder: !ref <speaker_encoder>
+    paths:
+        speaker_encoder: speechbrain/spkrec-ecapa-voxceleb/embedding_model.ckpt
