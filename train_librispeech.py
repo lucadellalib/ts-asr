@@ -12,6 +12,12 @@ Authors
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
+# Apply hotfix for SpeechBrain distributed execution
+import distributed as hotfix
+from speechbrain.utils import distributed
+
+distributed.if_main_process = hotfix.if_main_process
+
 import os
 import sys
 

@@ -18,6 +18,12 @@ Authors
 # TODO: check where to inject embeddings
 # TODO: train speaker encoder from scratch?
 
+# Apply hotfix for SpeechBrain distributed execution
+import distributed as hotfix
+from speechbrain.utils import distributed
+
+distributed.if_main_process = hotfix.if_main_process
+
 import os
 import sys
 
