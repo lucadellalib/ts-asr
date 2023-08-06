@@ -14,9 +14,9 @@ __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Data preparation
 data_folder: !PLACEHOLDER
-train_splits: ["train-clean-100"]
-dev_splits: ["dev-clean"]
-test_splits: ["test-clean"]
+train_splits: [train-clean-100]
+dev_splits: [dev-clean]
+test_splits: [test-clean]
 train_csv: !ref <save_folder>/train.csv
 valid_csv: !ref <save_folder>/dev-clean.csv
 test_csv: !ref <save_folder>/test-clean.csv
