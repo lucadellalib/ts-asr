@@ -37,16 +37,23 @@ class ASR(sb.Brain):
         wavs, wavs_lens = batch.sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
+        # Add speed perturbation if specified
+        if stage == sb.Stage.TRAIN:
+            if "speed_perturb" in self.modules:
+                wavs = self.modules.speed_perturb(wavs)
+
         # Extract features
         feats = self.modules.feature_extractor(wavs)
         feats = self.modules.normalizer(feats, wavs_lens)
 
         # Add augmentation if specified
         if stage == sb.Stage.TRAIN:
-            if hasattr(self.modules, "augmentation"):
+            if "augmentation" in self.modules:
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder/transcriber
+        if "cnn" in self.modules:
+            feats = self.modules.cnn(feats)
         encoder_out = self.modules.encoder(feats, wavs_lens)
         encoder_out = self.modules.encoder_proj(encoder_out)
 

@@ -44,6 +44,11 @@ class TSASR(sb.Brain):
         enroll_wavs, enroll_wavs_lens = batch.enroll_sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
+        # Add speed perturbation if specified
+        if stage == sb.Stage.TRAIN:
+            if "speed_perturb" in self.modules:
+                mixed_wavs = self.modules.speed_perturb(mixed_wavs)
+
         # Extract speaker embedding (freeze speaker encoder)
         with torch.set_grad_enabled(not self.hparams.run_pretrainer):
             feats = self.modules.speaker_feature_extractor(enroll_wavs)
@@ -57,10 +62,12 @@ class TSASR(sb.Brain):
 
         # Add augmentation if specified
         if stage == sb.Stage.TRAIN:
-            if hasattr(self.modules, "augmentation"):
+            if "augmentation" in self.modules:
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder/transcriber
+        if "cnn" in self.modules:
+            feats = self.modules.cnn(feats)
         encoder_out = self.modules.encoder(feats, mixed_wavs_lens, speaker_embs)
         encoder_out = self.modules.encoder_proj(encoder_out)
 
