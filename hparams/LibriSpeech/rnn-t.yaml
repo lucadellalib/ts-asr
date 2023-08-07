@@ -59,7 +59,7 @@ warmup_steps: 25000
 
 nonfinite_patience: 10
 max_grad_norm: 5.0
-auto_mix_prec: True
+auto_mix_prec: False
 ckpt_interval_minutes: 600
 
 # Model parameters
