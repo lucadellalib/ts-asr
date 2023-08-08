@@ -43,13 +43,11 @@ ctc_weight: 0.47
 #num_ce_epochs: 60
 #ce_weight: 0.47
 
-grad_accumulation_factor: 4
-train_batch_size: 4
-valid_batch_size: 4
-test_batch_size: !ref <valid_batch_size>
-train_num_workers: 4
-valid_num_workers: 4
-test_num_workers: !ref <valid_num_workers>
+grad_accumulation_factor: 1
+train_batch_size: 3
+valid_batch_size: 6
+test_batch_size: 3
+dataloader_workers: 4
 
 vocab_size: 1000  # If token_type=char, must be set equal to the number of found characters
 token_type: unigram  # ["unigram", "bpe", "char"]
@@ -271,15 +269,15 @@ beam_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
 # Dataloader options
 train_dataloader_kwargs:
     batch_size: !ref <train_batch_size>
-    num_workers: !ref <train_num_workers>
+    num_workers: !ref <dataloader_workers>
 
 valid_dataloader_kwargs:
     batch_size: !ref <valid_batch_size>
-    num_workers: !ref <valid_num_workers>
+    num_workers: !ref <dataloader_workers>
 
 test_dataloader_kwargs:
     batch_size: !ref <test_batch_size>
-    num_workers: !ref <test_num_workers>
+    num_workers: !ref <dataloader_workers>
 
 # Performance metrics
 wer_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats
