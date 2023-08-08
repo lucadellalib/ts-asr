@@ -43,7 +43,7 @@ ctc_weight: 0.47
 #num_ce_epochs: 60
 #ce_weight: 0.47
 
-grad_accumulation_factor: 1
+grad_accumulation_factor: 4
 train_batch_size: 3
 valid_batch_size: 6
 test_batch_size: 3

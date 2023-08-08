@@ -207,9 +207,10 @@ class ASR(sb.Brain):
                 valid_stats=stage_stats,
             )
             if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
-                self.checkpointer.save_and_keep_only(
-                    meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
-                )
+                if if_main_process():
+                    self.checkpointer.save_and_keep_only(
+                        meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
+                    )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
