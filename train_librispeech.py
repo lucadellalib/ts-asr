@@ -52,8 +52,7 @@ class ASR(sb.Brain):
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder/transcriber
-        if "cnn" in self.modules:
-            feats = self.modules.cnn(feats)
+        feats = self.modules.cnn(feats)
         encoder_out = self.modules.encoder(feats, wavs_lens)
         encoder_out = self.modules.encoder_proj(encoder_out)
 
@@ -209,7 +208,9 @@ class ASR(sb.Brain):
             if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
                 if if_main_process():
                     self.checkpointer.save_and_keep_only(
-                        meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
+                        meta={"WER": stage_stats["WER"]},
+                        min_keys=["WER"],
+                        num_to_keep=10,
                     )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
@@ -234,13 +235,20 @@ def dataio_prepare(hparams, tokenizer):
 
     if hparams["sorting"] == "ascending":
         # Sort training data to speed up training and get better results
-        train_data = train_data.filtered_sorted(sort_key="duration")
+        train_data = train_data.filtered_sorted(
+            sort_key="duration",
+            key_max_value={"duration": hparams["avoid_if_longer_than"]},
+        )
         # When sorting do not shuffle in dataloader otherwise it is pointless
         hparams["train_dataloader_kwargs"]["shuffle"] = False
 
     elif hparams["sorting"] == "descending":
         # Sort training data to speed up training and get better results
-        train_data = train_data.filtered_sorted(sort_key="duration", reverse=True)
+        train_data = train_data.filtered_sorted(
+            sort_key="duration",
+            reverse=True,
+            key_max_value={"duration": hparams["avoid_if_longer_than"]},
+        )
         # When sorting do not shuffle in dataloader otherwise it is pointless
         hparams["train_dataloader_kwargs"]["shuffle"] = False
 
@@ -256,13 +264,15 @@ def dataio_prepare(hparams, tokenizer):
     # Sort the validation data so it is faster to validate
     valid_data = valid_data.filtered_sorted(sort_key="duration", reverse=True)
 
-    test_data = sb.dataio.dataset.DynamicItemDataset.from_csv(
-        csv_path=hparams["test_csv"], replacements={"DATA_ROOT": data_folder},
-    )
     # Sort the test data so it is faster to test
-    test_data = test_data.filtered_sorted(sort_key="duration", reverse=True)
+    test_data = {}
+    for split, test_csv in zip(hparams["test_splits"], hparams["test_csv"]):
+        test_data[split] = sb.dataio.dataset.DynamicItemDataset.from_csv(
+            csv_path=test_csv, replacements={"DATA_ROOT": data_folder},
+        )
+        test_data[split].filtered_sorted(sort_key="duration", reverse=True)
 
-    datasets = [train_data, valid_data, test_data]
+    datasets = [train_data, valid_data, *test_data.values()]
 
     # 2. Define audio pipeline
     @sb.utils.data_pipeline.takes("wav")
@@ -382,8 +392,13 @@ if __name__ == "__main__":
         valid_loader_kwargs=hparams["valid_dataloader_kwargs"],
     )
 
-    # Test
-    brain.hparams.wer_file = os.path.join(hparams["output_folder"], f"wer.txt")
-    brain.evaluate(
-        test_data, min_key="WER", test_loader_kwargs=hparams["test_dataloader_kwargs"],
-    )
+    # Test on each split separately
+    for split in test_data:
+        brain.hparams.wer_file = os.path.join(
+            hparams["output_folder"], f"wer_{split}.txt"
+        )
+        brain.evaluate(
+            test_data[split],
+            min_key="WER",
+            test_loader_kwargs=hparams["test_dataloader_kwargs"],
+        )

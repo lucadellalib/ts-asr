@@ -66,8 +66,7 @@ class TSASR(sb.Brain):
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder/transcriber
-        if "cnn" in self.modules:
-            feats = self.modules.cnn(feats)
+        feats = self.modules.cnn(feats)
         encoder_out = self.modules.encoder(feats, mixed_wavs_lens, speaker_embs)
         encoder_out = self.modules.encoder_proj(encoder_out)
 
@@ -223,7 +222,9 @@ class TSASR(sb.Brain):
             if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
                 if if_main_process():
                     self.checkpointer.save_and_keep_only(
-                        meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
+                        meta={"WER": stage_stats["WER"]},
+                        min_keys=["WER"],
+                        num_to_keep=10,
                     )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
@@ -248,13 +249,20 @@ def dataio_prepare(hparams, tokenizer):
 
     if hparams["sorting"] == "ascending":
         # Sort training data to speed up training and get better results
-        train_data = train_data.filtered_sorted(sort_key="duration")
+        train_data = train_data.filtered_sorted(
+            sort_key="duration",
+            key_max_value={"duration": hparams["avoid_if_longer_than"]},
+        )
         # When sorting do not shuffle in dataloader otherwise it is pointless
         hparams["train_dataloader_kwargs"]["shuffle"] = False
 
     elif hparams["sorting"] == "descending":
         # Sort training data to speed up training and get better results
-        train_data = train_data.filtered_sorted(sort_key="duration", reverse=True)
+        train_data = train_data.filtered_sorted(
+            sort_key="duration",
+            reverse=True,
+            key_max_value={"duration": hparams["avoid_if_longer_than"]},
+        )
         # When sorting do not shuffle in dataloader otherwise it is pointless
         hparams["train_dataloader_kwargs"]["shuffle"] = False
 
@@ -409,7 +417,7 @@ if __name__ == "__main__":
 
     # Test on each split separately
     for split in ["test-clean-1mix", "test-clean-2mix", "test-clean-3mix"]:
-        # Due to DDP, do the preparation ONLY on the main python process
+        # Due to DDP, do the preparation ONLY on the main Python process
         run_on_main(
             prepare_librispeech_mix,
             kwargs={

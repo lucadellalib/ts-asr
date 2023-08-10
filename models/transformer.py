@@ -11,7 +11,10 @@ from typing import Optional
 
 import torch
 from speechbrain.dataio.dataio import length_to_mask
-from speechbrain.lobes.models.transformer.Transformer import TransformerInterface
+from speechbrain.lobes.models.transformer.Transformer import (
+    TransformerInterface,
+    get_lookahead_mask,
+)
 from speechbrain.nnet.activations import Swish
 from speechbrain.nnet.containers import ModuleList
 from speechbrain.nnet.linear import Linear
@@ -200,7 +203,11 @@ class Transformer(TransformerInterface):
             src_key_padding_mask = ~length_to_mask(abs_len).bool()
         else:
             src_key_padding_mask = None
+
         src_mask = None
+
+        if self.causal:
+            src_mask = get_lookahead_mask(src)
 
         return src_key_padding_mask, src_mask
 

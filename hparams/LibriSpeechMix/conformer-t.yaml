@@ -30,6 +30,7 @@ output_folder: !ref results/<experiment_name>/<seed>
 save_folder: !ref <output_folder>/save
 
 # Preprocessing parameters
+avoid_if_longer_than: 40.0
 sample_rate: 16000
 sorting: ascending
 n_fft: 512
@@ -64,8 +65,8 @@ auto_mix_prec: False
 ckpt_interval_minutes: 600
 
 # Model parameters
-activation: !name:torch.nn.LeakyReLU
-dropout: 0.1
+activation: !name:torch.nn.GELU
+dropout: 0.0
 d_model: 512
 nhead: 8
 num_encoder_layers: 12
@@ -76,6 +77,7 @@ normalize_before: True
 encoder_module: conformer
 attention_type: RelPosMHAXL
 causal: True
+padding: causal
 
 #embedding_dim: 128
 decoder_neurons: 512
@@ -149,6 +151,7 @@ cnn: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
     kernel_sizes: (3, 3)
     strides: (2, 2)
     residuals: (False, False)
+    padding: !ref <padding>
 
 encoder: !new:models.transformer.Transformer
     input_size: 640
@@ -157,6 +160,7 @@ encoder: !new:models.transformer.Transformer
     num_encoder_layers: !ref <num_encoder_layers>
     d_ffn: !ref <d_ffn>
     dropout: !ref <dropout>
+    activation: !ref <activation>
     positional_encoding: !ref <positional_encoding>
     kernel_size: !ref <kernel_size>
     normalize_before: !ref <normalize_before>

@@ -82,10 +82,14 @@ class CRDNN(SBCRDNN):
     >>> cnn_channels = [128, 256]
     >>> model = CRDNN(input_size, cnn_channels=cnn_channels)
     >>> src = torch.randn(batch_size, seq_length, input_size)
-    >>> speaker_embs = torch.randn(batch_size, 1, cnn_channels[-1])
+    >>> speaker_embs = torch.randn(batch_size, 1, input_size)
     >>> out = model(src, speaker_embs=speaker_embs)
 
     """
+
+    def __init__(self, *args, causal=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.causal = causal
 
     def forward(self, x, wav_len=None, speaker_embs=None):
         """Applies layers in sequence, passing only the first element of tuples.
@@ -106,6 +110,12 @@ class CRDNN(SBCRDNN):
             The output.
 
         """
+        # Reshape the input vector to [Batch, Time, Features]
+        # when a 4D vector is given
+        if x.ndim == 4:
+            b, t, ch1, ch2 = x.shape
+            x = x.reshape(b, t, ch1 * ch2)
+
         # Inject speaker embedding
         if speaker_embs is not None:
             x *= speaker_embs
@@ -126,6 +136,6 @@ if __name__ == "__main__":
     cnn_channels = [128, 256]
     model = CRDNN(input_size, cnn_channels=cnn_channels)
     src = torch.randn(batch_size, seq_length, input_size)
-    speaker_embs = torch.randn(batch_size, 1, cnn_channels[-1])
+    speaker_embs = torch.randn(batch_size, 1, input_size)
     out = model(src, speaker_embs=speaker_embs)
     print(out.shape)

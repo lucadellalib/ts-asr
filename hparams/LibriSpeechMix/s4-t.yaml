@@ -30,6 +30,7 @@ output_folder: !ref results/<experiment_name>/<seed>
 save_folder: !ref <output_folder>/save
 
 # Preprocessing parameters
+avoid_if_longer_than: 40.0
 sample_rate: 16000
 sorting: ascending
 n_fft: 512
@@ -64,16 +65,19 @@ auto_mix_prec: False
 ckpt_interval_minutes: 600
 
 # Model parameters
-activation: !name:torch.nn.LeakyReLU
-dropout: 0.1
+activation: !name:torch.nn.GELU
+dropout: 0.0
 d_model: 512
 num_encoder_layers: 12
 d_ffn: 2048
 kernel_size: 31
 causal: True
-s4_layer_type: !name:models.layers.dss.DSS
+padding: causal
+s4_layer_type: !name:models.layers.gss.GSS
 s4_layer_kwargs:
-    state_size: 1024
+    gating_size: 1024
+    hidden_size: 128
+    state_size: 256
 
 #embedding_dim: 128
 decoder_neurons: 512
@@ -147,6 +151,7 @@ cnn: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
     kernel_sizes: (3, 3)
     strides: (2, 2)
     residuals: (False, False)
+    padding: !ref <padding>
 
 encoder: !new:models.s4.S4
     input_size: 640
@@ -154,6 +159,7 @@ encoder: !new:models.s4.S4
     num_encoder_layers: !ref <num_encoder_layers>
     d_ffn: !ref <d_ffn>
     dropout: !ref <dropout>
+    activation: !ref <activation>
     kernel_size: !ref <kernel_size>
     causal: !ref <causal>
     s4_layer_type: !ref <s4_layer_type>
