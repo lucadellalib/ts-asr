@@ -44,17 +44,19 @@ ctc_weight: 0.47
 #ce_weight: 0.47
 
 grad_accumulation_factor: 4
-train_batch_size: 3
-valid_batch_size: 6
-test_batch_size: 3
+train_max_batch_length: 100
+valid_max_batch_length: 100
+test_max_batch_length: 32
+num_buckets: 200
+max_batch_size: 128
 dataloader_workers: 4
 
-vocab_size: 1000  # If token_type=char, must be set equal to the number of found characters
+vocab_size: 2500  # If token_type=char, must be set equal to the number of found characters
 token_type: unigram  # ["unigram", "bpe", "char"]
 character_coverage: 1.0
 blank_index: 0  # Index(blank/bos/eos) = 0
 
-lr: 0.0008
+lr: 0.001
 weight_decay: 0.01
 warmup_steps: 25000
 
@@ -64,14 +66,14 @@ auto_mix_prec: False
 ckpt_interval_minutes: 600
 
 # Model parameters
-activation: !name:torch.nn.GELU
+activation: !name:torch.nn.LeakyReLU
 dropout: 0.0
 d_model: 512
 num_encoder_layers: 12
 d_ffn: 2048
 kernel_size: 31
-causal: True
-padding: causal
+causal: False
+padding: same
 s4_layer_type: !name:models.layers.gss.GSS
 s4_layer_kwargs:
     gating_size: 1024
@@ -245,19 +247,6 @@ beam_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
     nbest: !ref <nbest>
     state_beam: !ref <state_beam>
     expand_beam: !ref <expand_beam>
-
-# Dataloader options
-train_dataloader_kwargs:
-    batch_size: !ref <train_batch_size>
-    num_workers: !ref <dataloader_workers>
-
-valid_dataloader_kwargs:
-    batch_size: !ref <valid_batch_size>
-    num_workers: !ref <dataloader_workers>
-
-test_dataloader_kwargs:
-    batch_size: !ref <test_batch_size>
-    num_workers: !ref <dataloader_workers>
 
 # Performance metrics
 wer_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats

@@ -25,7 +25,7 @@ import speechbrain as sb
 import torch
 import torchaudio
 from hyperpyyaml import load_hyperpyyaml
-from speechbrain.dataio.dataio import length_to_mask
+from speechbrain.dataio.sampler import DynamicBatchSampler
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import if_main_process, run_on_main
 
@@ -239,8 +239,6 @@ def dataio_prepare(hparams, tokenizer):
             sort_key="duration",
             key_max_value={"duration": hparams["avoid_if_longer_than"]},
         )
-        # When sorting do not shuffle in dataloader otherwise it is pointless
-        hparams["train_dataloader_kwargs"]["shuffle"] = False
 
     elif hparams["sorting"] == "descending":
         # Sort training data to speed up training and get better results
@@ -249,8 +247,6 @@ def dataio_prepare(hparams, tokenizer):
             reverse=True,
             key_max_value={"duration": hparams["avoid_if_longer_than"]},
         )
-        # When sorting do not shuffle in dataloader otherwise it is pointless
-        hparams["train_dataloader_kwargs"]["shuffle"] = False
 
     elif hparams["sorting"] == "random":
         pass
@@ -315,6 +311,7 @@ def dataio_prepare(hparams, tokenizer):
     sb.dataio.dataset.set_output_keys(
         datasets, ["id", "sig", "tokens_bos", "tokens_eos", "tokens", "target_words",],
     )
+
     return train_data, valid_data, test_data
 
 
@@ -383,6 +380,29 @@ if __name__ == "__main__":
     # Add objects to trainer
     brain.tokenizer = tokenizer
 
+    # Dynamic batching
+    hparams["train_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
+    hparams["train_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+        train_data,
+        hparams["train_max_batch_length"],
+        num_buckets=hparams["num_buckets"],
+        length_func=lambda x: x["duration"],
+        shuffle=True,
+        batch_ordering=hparams["sorting"],
+        max_batch_ex=hparams["max_batch_size"],
+    )
+
+    hparams["valid_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
+    hparams["valid_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+        valid_data,
+        hparams["valid_max_batch_length"],
+        num_buckets=hparams["num_buckets"],
+        length_func=lambda x: x["duration"],
+        shuffle=False,
+        batch_ordering="descending",
+        max_batch_ex=hparams["max_batch_size"],
+    )
+
     # Train
     brain.fit(
         brain.hparams.epoch_counter,
@@ -394,9 +414,23 @@ if __name__ == "__main__":
 
     # Test on each split separately
     for split in test_data:
+        hparams["test_dataloader_kwargs"] = {
+            "num_workers": hparams["dataloader_workers"]
+        }
+        hparams["test_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+            test_data[split],
+            hparams["test_max_batch_length"],
+            num_buckets=hparams["num_buckets"],
+            length_func=lambda x: x["duration"],
+            shuffle=False,
+            batch_ordering="descending",
+            max_batch_ex=hparams["max_batch_size"],
+        )
+
         brain.hparams.wer_file = os.path.join(
             hparams["output_folder"], f"wer_{split}.txt"
         )
+
         brain.evaluate(
             test_data[split],
             min_key="WER",
