@@ -382,6 +382,8 @@ if __name__ == "__main__":
 
     # Dynamic batching
     hparams["train_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
+    hparams["train_dataloader_kwargs"]["batch_size"] = hparams["train_batch_size"]
+    """
     hparams["train_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
         train_data,
         hparams["train_max_batch_length"],
@@ -391,8 +393,11 @@ if __name__ == "__main__":
         batch_ordering=hparams["sorting"],
         max_batch_ex=hparams["max_batch_size"],
     )
+    """
 
     hparams["valid_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
+    hparams["valid_dataloader_kwargs"]["batch_size"] = hparams["valid_batch_size"]
+    """
     hparams["valid_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
         valid_data,
         hparams["valid_max_batch_length"],
@@ -402,6 +407,7 @@ if __name__ == "__main__":
         batch_ordering="descending",
         max_batch_ex=hparams["max_batch_size"],
     )
+    """
 
     # Train
     brain.fit(
@@ -417,6 +423,8 @@ if __name__ == "__main__":
         hparams["test_dataloader_kwargs"] = {
             "num_workers": hparams["dataloader_workers"]
         }
+        hparams["test_dataloader_kwargs"]["batch_size"] = hparams["test_batch_size"]
+        """
         hparams["test_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
             test_data[split],
             hparams["test_max_batch_length"],
@@ -426,6 +434,7 @@ if __name__ == "__main__":
             batch_ordering="descending",
             max_batch_ex=hparams["max_batch_size"],
         )
+        """
 
         brain.hparams.wer_file = os.path.join(
             hparams["output_folder"], f"wer_{split}.txt"
