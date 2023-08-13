@@ -24,6 +24,9 @@ logging.basicConfig(
 _LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_SPLITS = (
+    "train-1mix",
+    "train-2mix",
+    "train-3mix",
     "dev-clean-1mix",
     "dev-clean-2mix",
     "dev-clean-3mix",
@@ -37,6 +40,7 @@ def prepare_librispeech_mix(
     data_folder: "str",
     save_folder: "Optional[str]" = None,
     splits: "Sequence[str]" = _DEFAULT_SPLITS,
+    max_enrolls: "Optional[int]" = None,
 ) -> "None":
     """Prepare data manifest JSON files for LibriSpeechMix dataset
     (see https://github.com/NaoyukiKanda/LibriSpeechMix).
@@ -54,6 +58,9 @@ def prepare_librispeech_mix(
         Splits with the same prefix are merged into a single
         JSON file (e.g. "dev-clean-1mix" and "dev-clean-2mix").
         Default to all the available splits.
+    max_enrolls:
+        The maximum number of enrollment utterances per target speaker.
+        Default to all the available enrollment utterances.
 
     Raises
     ------
@@ -64,7 +71,10 @@ def prepare_librispeech_mix(
 
     Examples
     --------
-    >>> prepare_librispeech_mix( "LibriSpeechMix", ["dev-clean-2mix", "test-clean-2mix"])
+    >>> prepare_librispeech_mix(
+    ...     "LibriSpeechMix",
+    ...     splits=["train-2mix", "dev-clean-2mix", "test-clean-2mix"]
+    ... )
 
     """
     if not save_folder:
@@ -75,13 +85,15 @@ def prepare_librispeech_mix(
     # Grouping
     groups = defaultdict(list)
     for split in splits:
-        if split.startswith("dev"):
+        if split.startswith("train"):
+            groups["train"].append(split)
+        elif split.startswith("dev"):
             groups["dev"].append(split)
         elif split.startswith("test"):
             groups["test"].append(split)
         else:
             raise ValueError(
-                f'`split` ({split}) must start with either "dev" or "test"'
+                f'`split` ({split}) must start with either "train", "dev" or "test"'
             )
 
     # Write output JSON for each group
@@ -123,7 +135,7 @@ def prepare_librispeech_mix(
                     for i, (text, idx) in enumerate(zip(texts, speaker_profile_index)):
                         ID_text = f"{ID}_text-{i}"
                         enroll_wavs = speaker_profile[idx]
-                        for enroll_wav in enroll_wavs:
+                        for enroll_wav in enroll_wavs[:max_enrolls]:
                             ID_enroll = f"{ID_text}_{enroll_wav}"
                             enroll_wav = os.path.join("{DATA_ROOT}", "data", enroll_wav)
                             output_entry = {

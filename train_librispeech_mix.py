@@ -42,17 +42,22 @@ class TSASR(sb.Brain):
         enroll_wavs, enroll_wavs_lens = batch.enroll_sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
-        # Add speed perturbation if specified
-        if stage == sb.Stage.TRAIN:
-            if "speed_perturb" in self.modules:
-                mixed_wavs = self.modules.speed_perturb(mixed_wavs)
-
-        # Extract speaker embedding (freeze speaker encoder)
+        # Extract speaker embedding
+        # run_pretrainer=True => freeze speaker encoder
+        if self.hparams.run_pretrainer:
+            self.modules.speaker_feature_extractor.eval()
+            self.modules.speaker_normalizer.eval()
+            self.modules.speaker_encoder.eval()
         with torch.set_grad_enabled(not self.hparams.run_pretrainer):
             feats = self.modules.speaker_feature_extractor(enroll_wavs)
             feats = self.modules.speaker_normalizer(feats, enroll_wavs_lens)
             speaker_embs = self.modules.speaker_encoder(feats, enroll_wavs_lens)
         speaker_embs = self.modules.speaker_proj(speaker_embs)
+
+        # Add speed perturbation if specified
+        if stage == sb.Stage.TRAIN:
+            if "speed_perturb" in self.modules:
+                mixed_wavs = self.modules.speed_perturb(mixed_wavs)
 
         # Extract features
         feats = self.modules.feature_extractor(mixed_wavs)
@@ -367,6 +372,7 @@ if __name__ == "__main__":
             "data_folder": hparams["data_folder"],
             "save_folder": hparams["save_folder"],
             "splits": hparams["splits"],
+            "max_enrolls": hparams["max_enrolls"],
         },
     )
 
@@ -403,32 +409,32 @@ if __name__ == "__main__":
 
     # Dynamic batching
     hparams["train_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
-    hparams["train_dataloader_kwargs"]["batch_size"] = hparams["train_batch_size"]
-    """
-    hparams["train_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
-        train_data,
-        hparams["train_max_batch_length"],
-        num_buckets=hparams["num_buckets"],
-        length_func=lambda x: x["duration"],
-        shuffle=True,
-        batch_ordering=hparams["sorting"],
-        max_batch_ex=hparams["max_batch_size"],
-    )
-    """
+    if hparams["dynamic_batching"]:
+        hparams["train_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+            train_data,
+            hparams["train_max_batch_length"],
+            num_buckets=hparams["num_buckets"],
+            length_func=lambda x: x["duration"],
+            shuffle=False,
+            batch_ordering=hparams["sorting"],
+            max_batch_ex=hparams["max_batch_size"],
+        )
+    else:
+        hparams["train_dataloader_kwargs"]["batch_size"] = hparams["train_batch_size"]
 
     hparams["valid_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
-    hparams["valid_dataloader_kwargs"]["batch_size"] = hparams["valid_batch_size"]
-    """
-    hparams["valid_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
-        valid_data,
-        hparams["valid_max_batch_length"],
-        num_buckets=hparams["num_buckets"],
-        length_func=lambda x: x["duration"],
-        shuffle=False,
-        batch_ordering="descending",
-        max_batch_ex=hparams["max_batch_size"],
-    )
-    """
+    if hparams["dynamic_batching"]:
+        hparams["valid_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+            valid_data,
+            hparams["valid_max_batch_length"],
+            num_buckets=hparams["num_buckets"],
+            length_func=lambda x: x["duration"],
+            shuffle=False,
+            batch_ordering="descending",
+            max_batch_ex=hparams["max_batch_size"],
+        )
+    else:
+        hparams["valid_dataloader_kwargs"]["batch_size"] = hparams["valid_batch_size"]
 
     # Train
     brain.fit(
@@ -440,7 +446,7 @@ if __name__ == "__main__":
     )
 
     # Test on each split separately
-    for split in ["test-clean-1mix", "test-clean-2mix", "test-clean-3mix"]:
+    for split in hparams["test_splits"]:
         # Due to DDP, do the preparation ONLY on the main Python process
         run_on_main(
             prepare_librispeech_mix,
@@ -448,6 +454,7 @@ if __name__ == "__main__":
                 "data_folder": hparams["data_folder"],
                 "save_folder": hparams["save_folder"],
                 "splits": [split],
+                "max_enrolls": hparams["max_enrolls"],
             },
         )
 
@@ -457,18 +464,18 @@ if __name__ == "__main__":
         hparams["test_dataloader_kwargs"] = {
             "num_workers": hparams["dataloader_workers"]
         }
-        hparams["test_dataloader_kwargs"]["batch_size"] = hparams["test_batch_size"]
-        """
-        hparams["test_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
-            test_data[split],
-            hparams["test_max_batch_length"],
-            num_buckets=hparams["num_buckets"],
-            length_func=lambda x: x["duration"],
-            shuffle=False,
-            batch_ordering="descending",
-            max_batch_ex=hparams["max_batch_size"],
-        )
-        """
+        if hparams["dynamic_batching"]:
+            hparams["test_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+                test_data[split],
+                hparams["test_max_batch_length"],
+                num_buckets=hparams["num_buckets"],
+                length_func=lambda x: x["duration"],
+                shuffle=False,
+                batch_ordering="descending",
+                max_batch_ex=hparams["max_batch_size"],
+            )
+        else:
+            hparams["test_dataloader_kwargs"]["batch_size"] = hparams["test_batch_size"]
 
         brain.hparams.wer_file = os.path.join(
             hparams["output_folder"], f"wer_{split}.txt"

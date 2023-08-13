@@ -29,7 +29,7 @@ output_folder: !ref results/<experiment_name>/<seed>
 save_folder: !ref <output_folder>/save
 
 # Preprocessing parameters
-avoid_if_longer_than: 40.0
+avoid_if_longer_than: 60.0
 sample_rate: 16000
 sorting: ascending
 n_fft: 512
@@ -44,15 +44,16 @@ num_epochs: 100
 #ce_weight: 0.47
 
 grad_accumulation_factor: 4
+dynamic_batching: True
 train_batch_size: 8
-valid_batch_size: 16
-test_batch_size: 8
-#train_max_batch_length: 100
-#valid_max_batch_length: 100
-#test_max_batch_length: 32
-#num_buckets: 200
-#max_batch_size: 128
-dataloader_workers: 4
+valid_batch_size: 8
+test_batch_size: 6
+train_max_batch_length: 90
+valid_max_batch_length: 90
+test_max_batch_length: 60
+num_buckets: 80
+max_batch_size: 128
+dataloader_workers: 6
 
 vocab_size: 1000  # If token_type=char, must be set equal to the number of found characters
 token_type: unigram  # ["unigram", "bpe", "char"]
@@ -91,8 +92,7 @@ joint_dim: 640
 
 # Decoding parameters
 valid_search_freq: 5
-beam_size: 10
-nbest: 1
+beam_size: 4
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
 expand_beam: 2.3
@@ -108,7 +108,7 @@ feature_extractor: !new:speechbrain.lobes.features.Fbank
     win_length: !ref <win_length>
 
 normalizer: !new:speechbrain.processing.features.InputNormalization
-    norm_type: global
+    norm_type: sentence
     update_until_epoch: 4
 
 augmentation: !new:speechbrain.lobes.augment.SpecAugment
@@ -249,7 +249,7 @@ beam_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
     classifier_network: [!ref <transducer_head>]
     blank_id: !ref <blank_index>
     beam_size: !ref <beam_size>
-    nbest: !ref <nbest>
+    nbest: 1
     state_beam: !ref <state_beam>
     expand_beam: !ref <expand_beam>
 

@@ -40,7 +40,31 @@ python -m torch.distributed.launch --nproc_per_node=<num-gpus> \
 train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
 ```
 
-**NOTE**: a single GPU is used for inference, even if multiple GPUs are available.
+To use multiple GPUs on multiple nodes, for each node with rank `0, ..., <num-nodes> - 1` run:
+
+```bash
+python -m torch.distributed.launch --nproc_per_node=<num-gpus-per-node> \
+--nnodes=<num-nodes> --node_rank=<node-rank> --master_addr <rank-0-ip-addr> --master_port 5555 \
+train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
+```
+
+**NOTE**: a single GPU is used for inference, even when multiple GPUs are available.
+
+### Examples
+
+```bash
+nohup python -m torch.distributed.launch --nproc_per_node=8 \
+train_librispeech.py hparams/LibriSpeech/conformer-t.yaml \
+--data_folder datasets/LibriSpeech --num_epochs 100 --d_model 256 \
+--distributed_launch &
+```
+
+```bash
+nohup python -m torch.distributed.launch --nproc_per_node=8 \
+train_librispeech_mix.py hparams/LibriSpeechMix/conformer-t.yaml \
+--data_folder datasets/LibriSpeechMix --num_epochs 10 --d_model 256 \
+--distributed_launch &
+```
 
 ---------------------------------------------------------------------------------------------------------
 
