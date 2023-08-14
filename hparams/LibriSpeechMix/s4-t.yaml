@@ -15,9 +15,9 @@ __set_seed: !apply:torch.manual_seed [!ref <seed>]
 # Data preparation
 data_folder: !PLACEHOLDER
 splits:
-    - train-3mix
-    - dev-clean-3mix
-    - test-clean-3mix
+    - train-2mix
+    - dev-clean-2mix
+    - test-clean-2mix
 max_enrolls: 1
 test_splits: [test-clean-2mix]
 train_json: !ref <save_folder>/train.json
