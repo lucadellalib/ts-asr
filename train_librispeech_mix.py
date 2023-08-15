@@ -393,7 +393,7 @@ if __name__ == "__main__":
     # Download the pretrained models
     if hparams["run_pretrainer"]:
         run_on_main(hparams["pretrainer"].collect_files)
-        hparams["pretrainer"].load_collected()
+        run_on_main(hparams["pretrainer"].load_collected)
 
     # Trainer initialization
     brain = TSASR(
