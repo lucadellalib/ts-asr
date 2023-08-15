@@ -48,8 +48,8 @@ dynamic_batching: True
 train_batch_size: 8
 valid_batch_size: 8
 test_batch_size: 6
-train_max_batch_length: 90
-valid_max_batch_length: 90
+train_max_batch_length: 80
+valid_max_batch_length: 80
 test_max_batch_length: 60
 num_buckets: 80
 max_batch_size: 128
@@ -87,7 +87,7 @@ decoder_num_layers: 1
 joint_dim: 640
 
 # Decoding parameters
-valid_search_freq: 5
+valid_search_freq: 3
 beam_size: 4
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3

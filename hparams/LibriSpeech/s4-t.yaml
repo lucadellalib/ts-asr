@@ -48,8 +48,8 @@ dynamic_batching: True
 train_batch_size: 8
 valid_batch_size: 8
 test_batch_size: 6
-train_max_batch_length: 90
-valid_max_batch_length: 90
+train_max_batch_length: 80
+valid_max_batch_length: 80
 test_max_batch_length: 60
 num_buckets: 80
 max_batch_size: 128

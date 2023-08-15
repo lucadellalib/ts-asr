@@ -73,7 +73,7 @@ class S4(nn.Module):
     >>> d_model = 512
     >>> model = S4(input_size, d_model)
     >>> src = torch.randn(batch_size, seq_length, input_size)
-    >>> speaker_embs = torch.randn(batch_size, 1, d_model)
+    >>> speaker_embs = torch.randn(batch_size, 1, input_size)
     >>> out = model(src, speaker_embs=speaker_embs)
 
     """
@@ -429,6 +429,6 @@ if __name__ == "__main__":
     d_model = 512
     model = S4(input_size, d_model)
     src = torch.randn(batch_size, seq_length, input_size)
-    speaker_embs = torch.randn(batch_size, 1, d_model)
+    speaker_embs = torch.randn(batch_size, 1, input_size)
     out = model(src, speaker_embs=speaker_embs)
     print(out.shape)
