@@ -184,7 +184,7 @@ class Transformer(TransformerInterface):
             pos_embs_encoder = None
             src += self.positional_encoding(src)  # Add the encodings here
 
-        encoder_out, attention_lst = self.encoder(
+        src, attention_lst = self.encoder(
             src=src,
             src_mask=src_mask,
             src_key_padding_mask=src_key_padding_mask,
@@ -195,7 +195,7 @@ class Transformer(TransformerInterface):
         if speaker_embs is not None:
             src += speaker_embs
 
-        return encoder_out
+        return src
 
     def _make_masks(self, src, wav_len=None):
         if wav_len is not None:

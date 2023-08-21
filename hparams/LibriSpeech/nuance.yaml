@@ -160,10 +160,10 @@ decoder: !new:speechbrain.nnet.RNN.LSTM
     num_layers: !ref <decoder_num_layers>
     re_init: True
 
-decoder_proj: !new:speechbrain.nnet.linear.Linear
-    input_size: !ref <decoder_neurons>
-    n_neurons: !ref <joint_dim>
-    bias: False
+#decoder_proj: !new:speechbrain.nnet.linear.Linear
+#    input_size: !ref <decoder_neurons>
+#    n_neurons: !ref <joint_dim>
+#    bias: False
 
 #decoder_head: !new:speechbrain.nnet.linear.Linear
 #    input_size: !ref <joint_dim>
@@ -201,7 +201,7 @@ modules:
     #encoder_head: !ref <encoder_head>
     embedding: !ref <embedding>
     decoder: !ref <decoder>
-    decoder_proj: !ref <decoder_proj>
+    #decoder_proj: !ref <decoder_proj>
     #decoder_head: !ref <decoder_head>
     joiner: !ref <joiner>
     transducer_head: !ref <transducer_head>
@@ -209,7 +209,7 @@ modules:
 model: !new:torch.nn.ModuleList
     [[!ref <feature_extractor>, !ref <augmentation>, !ref <speed_perturb>,
       !ref <frontend>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
-      !ref <embedding>, !ref <decoder>, !ref <decoder_proj>, #!ref <decoder_head>,
+      !ref <embedding>, !ref <decoder>, #!ref <decoder_proj>, #!ref <decoder_head>,
       !ref <joiner>, !ref <transducer_head>]]
 
 # Loss functions
@@ -235,7 +235,7 @@ lr_annealing: !new:speechbrain.nnet.schedulers.NoamScheduler
 
 # Searchers
 greedy_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
-    decode_network_lst: [!ref <embedding>, !ref <decoder>, !ref <decoder_proj>]
+    decode_network_lst: [!ref <embedding>, !ref <decoder>] #, !ref <decoder_proj>]
     tjoint: !ref <joiner>
     classifier_network: [!ref <transducer_head>]
     blank_id: !ref <blank_index>
@@ -243,7 +243,7 @@ greedy_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
     nbest: 1
 
 beam_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher
-    decode_network_lst: [!ref <embedding>, !ref <decoder>, !ref <decoder_proj>]
+    decode_network_lst: [!ref <embedding>, !ref <decoder>] #, !ref <decoder_proj>]
     tjoint: !ref <joiner>
     classifier_network: [!ref <transducer_head>]
     blank_id: !ref <blank_index>

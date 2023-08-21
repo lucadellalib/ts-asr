@@ -147,13 +147,13 @@ class S4(nn.Module):
         src_key_padding_mask, _ = self._make_masks(src, wav_len)
         src = self.custom_src_module(src)
 
-        encoder_out = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask)
+        src = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask)
 
         # Inject speaker embedding (at the end to avoid vanishing gradient problems)
         if speaker_embs is not None:
             src += speaker_embs
 
-        return encoder_out
+        return src
 
     def _make_masks(self, src, wav_len=None):
         if wav_len is not None:
