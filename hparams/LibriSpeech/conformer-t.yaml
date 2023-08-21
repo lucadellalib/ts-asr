@@ -77,10 +77,6 @@ nhead: 4
 num_encoder_layers: 12
 d_ffn: 2048
 kernel_size: 31
-positional_encoding: fixed_abs_sine
-normalize_before: True
-encoder_module: conformer
-attention_type: RelPosMHAXL
 causal: False
 padding: same
 
@@ -127,7 +123,7 @@ speed_perturb: !new:speechbrain.processing.speech_augmentation.SpeedPerturb
     orig_freq: !ref <sample_rate>
     speeds: [95, 100, 105]
 
-cnn: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
+frontend: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
     input_shape: [null, null, !ref <n_mels>]
     num_blocks: 2
     num_layers_per_block: 1
@@ -145,10 +141,11 @@ encoder: !new:models.transformer.Transformer
     d_ffn: !ref <d_ffn>
     dropout: !ref <dropout>
     activation: !ref <activation>
-    positional_encoding: !ref <positional_encoding>
-    normalize_before: !ref <normalize_before>
-    encoder_module: !ref <encoder_module>
-    attention_type: !ref <attention_type>
+    kernel_size: !ref <kernel_size>
+    positional_encoding: fixed_abs_sine
+    normalize_before: True
+    encoder_module: conformer
+    attention_type: RelPosMHAXL
     causal: !ref <causal>
 
 encoder_proj: !new:speechbrain.nnet.linear.Linear
@@ -195,7 +192,7 @@ modules:
     normalizer: !ref <normalizer>
     augmentation: !ref <augmentation>
     speed_perturb: !ref <speed_perturb>
-    cnn: !ref <cnn>
+    frontend: !ref <frontend>
     encoder: !ref <encoder>
     encoder_proj: !ref <encoder_proj>
     #encoder_head: !ref <encoder_head>
@@ -208,7 +205,7 @@ modules:
 
 model: !new:torch.nn.ModuleList
     [[!ref <feature_extractor>, !ref <normalizer>, !ref <augmentation>, !ref <speed_perturb>,
-      !ref <cnn>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
+      !ref <frontend>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
       !ref <embedding>, !ref <decoder>, !ref <decoder_proj>, #!ref <decoder_head>,
       !ref <joiner>, !ref <transducer_head>]]
 

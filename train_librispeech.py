@@ -52,7 +52,7 @@ class ASR(sb.Brain):
                 feats = self.modules.augmentation(feats)
 
         # Forward encoder/transcriber
-        feats = self.modules.cnn(feats)
+        feats = self.modules.frontend(feats)
         encoder_out = self.modules.encoder(feats, wavs_lens)
         encoder_out = self.modules.encoder_proj(encoder_out)
 

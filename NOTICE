@@ -1,8 +1,8 @@
 This project incorporates components from the projects listed below. The original copyright notices are set forth below.
 
 #############################################################################################################################################################
-1. Code in {distributed, librispeech_prepare, models/{crdnn, s4, transformer}, train_{librispeech, librispeech_mix}}.py,
-           hparams/{LibriSpeech, LibriSpeechMix}/{conformer-t, rnn-t, s4-t}.yaml adapted from:
+1. Code in {distributed, librispeech_prepare, models/{crdnn, s4, transformer}, train_{librispeech, librispeech_mix, nuance}}.py,
+           hparams/{LibriSpeech, LibriSpeechMix}/{conformer-t, nuance, rnn-t, s4-t}.yaml adapted from:
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/speechbrain/utils/distributed.py
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/librispeech_prepare.py
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/speechbrain/lobes/models/CRDNN/CRDNN.py

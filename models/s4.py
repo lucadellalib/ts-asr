@@ -73,7 +73,7 @@ class S4(nn.Module):
     >>> d_model = 512
     >>> model = S4(input_size, d_model)
     >>> src = torch.randn(batch_size, seq_length, input_size)
-    >>> speaker_embs = torch.randn(batch_size, 1, input_size)
+    >>> speaker_embs = torch.randn(batch_size, 1, d_model)
     >>> out = model(src, speaker_embs=speaker_embs)
 
     """
@@ -144,14 +144,14 @@ class S4(nn.Module):
             b, t, ch1, ch2 = src.shape
             src = src.reshape(b, t, ch1 * ch2)
 
-        # Inject speaker embedding
-        if speaker_embs is not None:
-            src *= speaker_embs
-
         src_key_padding_mask, _ = self._make_masks(src, wav_len)
         src = self.custom_src_module(src)
 
         encoder_out = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask)
+
+        # Inject speaker embedding (at the end to avoid vanishing gradient problems)
+        if speaker_embs is not None:
+            src += speaker_embs
 
         return encoder_out
 
@@ -429,6 +429,6 @@ if __name__ == "__main__":
     d_model = 512
     model = S4(input_size, d_model)
     src = torch.randn(batch_size, seq_length, input_size)
-    speaker_embs = torch.randn(batch_size, 1, input_size)
+    speaker_embs = torch.randn(batch_size, 1, d_model)
     out = model(src, speaker_embs=speaker_embs)
     print(out.shape)
