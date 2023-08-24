@@ -44,7 +44,7 @@ class ASR(sb.Brain):
 
         # Extract features
         feats = self.modules.feature_extractor(wavs)
-        feats = self.modules.normalizer(feats, wavs_lens)
+        feats = self.modules.normalizer(feats, wavs_lens, epoch=self.hparams.epoch_counter.current)
 
         # Add augmentation if specified
         if stage == sb.Stage.TRAIN:

@@ -43,16 +43,10 @@ class TSASR(sb.Brain):
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Extract speaker embedding
-        # run_pretrainer=True => freeze speaker encoder
-        if self.hparams.run_pretrainer:
-            self.modules.speaker_feature_extractor.eval()
-            self.modules.speaker_normalizer.eval()
-            self.modules.speaker_encoder.eval()
-        with torch.set_grad_enabled(not self.hparams.run_pretrainer):
-            feats = self.modules.speaker_feature_extractor(enroll_wavs)
-            feats = self.modules.speaker_normalizer(feats, enroll_wavs_lens)
-            speaker_embs = self.modules.speaker_encoder(feats, enroll_wavs_lens)
-        speaker_embs = self.modules.speaker_proj(speaker_embs)
+        feats = self.modules.speaker_feature_extractor(enroll_wavs)
+        feats = self.modules.speaker_normalizer(feats, enroll_wavs_lens, epoch=self.hparams.epoch_counter.current)
+        feats = self.modules.frontend(feats)
+        speaker_embs = self.modules.speaker_encoder(feats, enroll_wavs_lens)
 
         # Add speed perturbation if specified
         if stage == sb.Stage.TRAIN:
@@ -70,7 +64,7 @@ class TSASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        encoder_out = self.modules.encoder(feats, mixed_wavs_lens, speaker_embs)
+        encoder_out = self.modules.encoder(feats, mixed_wavs_lens, speaker_embs, enroll_wavs_lens)
         encoder_out = self.modules.encoder_proj(encoder_out)
 
         # Forward decoder/predictor
@@ -389,11 +383,6 @@ if __name__ == "__main__":
 
     # Create the datasets objects as well as tokenization and encoding
     train_data, valid_data, _ = dataio_prepare(hparams, tokenizer)
-
-    # Download the pretrained models
-    if hparams["run_pretrainer"]:
-        run_on_main(hparams["pretrainer"].collect_files)
-        run_on_main(hparams["pretrainer"].load_collected)
 
     # Trainer initialization
     brain = TSASR(
