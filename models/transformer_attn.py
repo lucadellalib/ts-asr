@@ -181,13 +181,6 @@ class Transformer(TransformerInterface):
         src_key_padding_mask, src_mask = self._make_masks(src, wav_len)
         src = self.custom_src_module(src)
 
-        # Inject speaker embedding
-        if speaker_embs is not None:
-            if speaker_embs_length is None:
-                speaker_embs_length = torch.ones(speaker_embs.shape[0], device=speaker_embs.device)
-            key_padding_mask = ~length_to_mask(speaker_embs_length * speaker_embs.shape[1]).bool()
-            src, _ = self.speaker_attn(src, speaker_embs, speaker_embs, key_padding_mask=key_padding_mask, need_weights=False)
-
         # Add positional encoding to queries if are sinusoidal
         if self.attention_type == "RelPosMHAXL":
             pos_embs_encoder = self.positional_encoding(src)
@@ -195,14 +188,31 @@ class Transformer(TransformerInterface):
             pos_embs_encoder = None
             src += self.positional_encoding(src)  # Add the encodings here
 
-        encoder_out, attention_lst = self.encoder(
+        src, attention_lst = self.encoder(
             src=src,
             src_mask=src_mask,
             src_key_padding_mask=src_key_padding_mask,
             pos_embs=pos_embs_encoder,
         )
 
-        return encoder_out
+        # Inject speaker embedding
+        if speaker_embs is not None:
+            if speaker_embs_length is None:
+                speaker_embs_length = torch.ones(
+                    speaker_embs.shape[0], device=speaker_embs.device
+                )
+            key_padding_mask = ~length_to_mask(
+                speaker_embs_length * speaker_embs.shape[1]
+            ).bool()
+            src, _ = self.speaker_attn(
+                src,
+                speaker_embs,
+                speaker_embs,
+                key_padding_mask=key_padding_mask,
+                need_weights=False,
+            )
+
+        return src
 
     def _make_masks(self, src, wav_len=None):
         if wav_len is not None:

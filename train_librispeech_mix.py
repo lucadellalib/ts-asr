@@ -13,9 +13,6 @@ Authors
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
-# TODO: check where to inject embeddings
-# TODO: train speaker encoder from scratch?
-
 # Apply hotfix for SpeechBrain distributed execution
 import distributed as hotfix
 from speechbrain.utils import distributed
@@ -43,19 +40,19 @@ class TSASR(sb.Brain):
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Extract speaker embedding
-        # run_pretrainer=True => freeze speaker encoder
-        if self.hparams.run_pretrainer:
+        # pretrain=True => freeze speaker encoder
+        if self.hparams.pretrain:
             self.modules.speaker_feature_extractor.eval()
             self.modules.speaker_normalizer.eval()
             self.modules.speaker_encoder.eval()
-        with torch.set_grad_enabled(not self.hparams.run_pretrainer):
+        with torch.set_grad_enabled(not self.hparams.pretrain):
             feats = self.modules.speaker_feature_extractor(enroll_wavs)
             feats = self.modules.speaker_normalizer(feats, enroll_wavs_lens)
             speaker_embs = self.modules.speaker_encoder(feats, enroll_wavs_lens)
         speaker_embs = self.modules.speaker_proj(speaker_embs)
 
         # Add speed perturbation if specified
-        if stage == sb.Stage.TRAIN:
+        if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "speed_perturb" in self.modules:
                 mixed_wavs = self.modules.speed_perturb(mixed_wavs)
 
@@ -64,7 +61,7 @@ class TSASR(sb.Brain):
         feats = self.modules.normalizer(feats, mixed_wavs_lens, epoch=self.hparams.epoch_counter.current)
 
         # Add augmentation if specified
-        if stage == sb.Stage.TRAIN:
+        if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "augmentation" in self.modules:
                 feats = self.modules.augmentation(feats)
 
@@ -124,7 +121,6 @@ class TSASR(sb.Brain):
         ids = batch.id
         _, mixed_wavs_lens = batch.mixed_sig
         tokens, tokens_lens = batch.tokens
-        tokens_eos, tokens_eos_lens = batch.tokens_eos
 
         loss = self.hparams.transducer_loss(
             transducer_logits, tokens, mixed_wavs_lens, tokens_lens
@@ -134,6 +130,7 @@ class TSASR(sb.Brain):
                 ctc_logprobs, tokens, mixed_wavs_lens, tokens_lens
             )
         if ce_logprobs is not None:
+            tokens_eos, tokens_eos_lens = batch.tokens_eos
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
                 ce_logprobs, tokens_eos, length=tokens_eos_lens
             )
@@ -227,7 +224,7 @@ class TSASR(sb.Brain):
                     self.checkpointer.save_and_keep_only(
                         meta={"WER": stage_stats["WER"]},
                         min_keys=["WER"],
-                        num_to_keep=10,
+                        num_to_keep=self.hparams.keep_checkpoints,
                     )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
@@ -313,9 +310,9 @@ def dataio_prepare(hparams, tokenizer):
     )
     def text_pipeline(wrd):
         tokens_list = tokenizer.sp.encode_as_ids(wrd)
-        tokens_bos = torch.LongTensor([hparams["blank_index"]] + (tokens_list))
+        tokens_bos = torch.LongTensor([hparams["bos_index"]] + (tokens_list))
         yield tokens_bos
-        tokens_eos = torch.LongTensor(tokens_list + [hparams["blank_index"]])
+        tokens_eos = torch.LongTensor(tokens_list + [hparams["eos_index"]])
         yield tokens_eos
         tokens = torch.LongTensor(tokens_list)
         yield tokens
@@ -384,6 +381,10 @@ if __name__ == "__main__":
         annotation_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=hparams["character_coverage"],
+        bos_id=hparams["bos_index"],
+        eos_id=hparams["eos_index"],
+        pad_id=hparams["pad_index"],
+        unk_id=hparams["blank_index"],
         annotation_format="json",
     )
 
@@ -391,7 +392,7 @@ if __name__ == "__main__":
     train_data, valid_data, _ = dataio_prepare(hparams, tokenizer)
 
     # Download the pretrained models
-    if hparams["run_pretrainer"]:
+    if hparams["pretrain"]:
         run_on_main(hparams["pretrainer"].collect_files)
         run_on_main(hparams["pretrainer"].load_collected)
 

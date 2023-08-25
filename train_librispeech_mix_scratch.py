@@ -13,9 +13,6 @@ Authors
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
-# TODO: check where to inject embeddings
-# TODO: train speaker encoder from scratch?
-
 # Apply hotfix for SpeechBrain distributed execution
 import distributed as hotfix
 from speechbrain.utils import distributed
@@ -49,7 +46,7 @@ class TSASR(sb.Brain):
         speaker_embs = self.modules.speaker_encoder(feats, enroll_wavs_lens)
 
         # Add speed perturbation if specified
-        if stage == sb.Stage.TRAIN:
+        if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "speed_perturb" in self.modules:
                 mixed_wavs = self.modules.speed_perturb(mixed_wavs)
 
@@ -58,7 +55,7 @@ class TSASR(sb.Brain):
         feats = self.modules.normalizer(feats, mixed_wavs_lens, epoch=self.hparams.epoch_counter.current)
 
         # Add augmentation if specified
-        if stage == sb.Stage.TRAIN:
+        if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "augmentation" in self.modules:
                 feats = self.modules.augmentation(feats)
 
@@ -118,7 +115,6 @@ class TSASR(sb.Brain):
         ids = batch.id
         _, mixed_wavs_lens = batch.mixed_sig
         tokens, tokens_lens = batch.tokens
-        tokens_eos, tokens_eos_lens = batch.tokens_eos
 
         loss = self.hparams.transducer_loss(
             transducer_logits, tokens, mixed_wavs_lens, tokens_lens
@@ -128,6 +124,7 @@ class TSASR(sb.Brain):
                 ctc_logprobs, tokens, mixed_wavs_lens, tokens_lens
             )
         if ce_logprobs is not None:
+            tokens_eos, tokens_eos_lens = batch.tokens_eos
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
                 ce_logprobs, tokens_eos, length=tokens_eos_lens
             )
@@ -164,7 +161,7 @@ class TSASR(sb.Brain):
                     self.scaler.update()
                     self.zero_grad(set_to_none=True)
                     self.optimizer_step += 1
-                    self.hparams.lr_annealing(self.optimizer)
+                    #self.hparams.lr_annealing(self.optimizer)
             else:
                 if self.bfloat16_mix_prec:
                     with torch.autocast(
@@ -182,7 +179,7 @@ class TSASR(sb.Brain):
                         self.optimizer.step()
                     self.zero_grad(set_to_none=True)
                     self.optimizer_step += 1
-                    self.hparams.lr_annealing(self.optimizer)
+                    #self.hparams.lr_annealing(self.optimizer)
 
         self.on_fit_batch_end(batch, outputs, loss, should_step)
         return loss.detach().cpu()
@@ -209,10 +206,13 @@ class TSASR(sb.Brain):
 
         # Perform end-of-iteration operations, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
-            lr = self.hparams.lr_annealing.current_lr
+            #lr = self.hparams.lr_annealing.current_lr
+            old_lr, new_lr = self.hparams.lr_annealing(stage_stats["loss"])
+            new_lr = max(new_lr, 1e-5)
+            sb.nnet.schedulers.update_learning_rate(self.optimizer, new_lr)
             steps = self.optimizer_step
             self.hparams.train_logger.log_stats(
-                stats_meta={"epoch": epoch, "lr": lr, "steps": steps},
+                stats_meta={"epoch": epoch, "lr": old_lr, "steps": steps},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
@@ -221,7 +221,7 @@ class TSASR(sb.Brain):
                     self.checkpointer.save_and_keep_only(
                         meta={"WER": stage_stats["WER"]},
                         min_keys=["WER"],
-                        num_to_keep=10,
+                        num_to_keep=self.hparams.keep_checkpoints,
                     )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
@@ -307,9 +307,9 @@ def dataio_prepare(hparams, tokenizer):
     )
     def text_pipeline(wrd):
         tokens_list = tokenizer.sp.encode_as_ids(wrd)
-        tokens_bos = torch.LongTensor([hparams["blank_index"]] + (tokens_list))
+        tokens_bos = torch.LongTensor([hparams["bos_index"]] + (tokens_list))
         yield tokens_bos
-        tokens_eos = torch.LongTensor(tokens_list + [hparams["blank_index"]])
+        tokens_eos = torch.LongTensor(tokens_list + [hparams["eos_index"]])
         yield tokens_eos
         tokens = torch.LongTensor(tokens_list)
         yield tokens
@@ -378,6 +378,10 @@ if __name__ == "__main__":
         annotation_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=hparams["character_coverage"],
+        bos_id=hparams["bos_index"],
+        eos_id=hparams["eos_index"],
+        pad_id=hparams["pad_index"],
+        unk_id=hparams["blank_index"],
         annotation_format="json",
     )
 

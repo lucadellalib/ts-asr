@@ -18,7 +18,7 @@ splits:
     - train-2mix
     - dev-clean-2mix
     - test-clean-2mix
-max_enrolls: 1
+max_enrolls: 4
 test_splits: [test-clean-2mix]
 train_json: !ref <save_folder>/train.json
 valid_json: !ref <save_folder>/dev.json
@@ -38,16 +38,16 @@ win_length: 32
 
 # Training parameters
 num_epochs: 100
-#num_ctc_epochs: 60
-#ctc_weight: 0.47
-#num_ce_epochs: 60
-#ce_weight: 0.47
+num_ctc_epochs: 60
+ctc_weight: 0.47
+num_ce_epochs: 60
+ce_weight: 0.47
 
 grad_accumulation_factor: 4
 dynamic_batching: True
-train_batch_size: 8
-valid_batch_size: 8
-test_batch_size: 6
+train_batch_size: 4
+valid_batch_size: 4
+test_batch_size: 2
 train_max_batch_length: 80
 valid_max_batch_length: 80
 test_max_batch_length: 60
@@ -58,7 +58,10 @@ dataloader_workers: 6
 vocab_size: 1000  # If token_type=char, must be set equal to the number of found characters
 token_type: unigram  # ["unigram", "bpe", "char"]
 character_coverage: 1.0
-blank_index: 0  # Index(blank/bos/eos) = 0
+pad_index: 0
+bos_index: 1
+eos_index: 2
+blank_index: 3
 
 lr: 0.002
 weight_decay: 0.01
@@ -71,10 +74,10 @@ ckpt_interval_minutes: 600
 
 # Model parameters
 activation: !name:torch.nn.LeakyReLU
-dropout: 0.0
+dropout: 0.1
 d_model: 256
 nhead: 4
-num_encoder_layers: 12
+num_encoder_layers: 17
 d_ffn: 2048
 kernel_size: 31
 causal: False
@@ -93,6 +96,10 @@ beam_size: 4
 state_beam: 2.3
 expand_beam: 2.3
 
+# Options
+augment: True
+keep_checkpoints: 10
+
 # Modules
 speaker_feature_extractor: !new:speechbrain.lobes.features.Fbank
     n_mels: 80
@@ -105,14 +112,14 @@ speaker_frontend: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
     input_shape: [null, null, !ref <n_mels>]
     num_blocks: 2
     num_layers_per_block: 1
-    out_channels: (128, 128)
+    out_channels: (64, 32)
     kernel_sizes: (3, 3)
     strides: (2, 2)
     residuals: (False, False)
     padding: !ref <padding>
 
 speaker_encoder: !new:models.transformer_attn.Transformer
-    input_size: 2560
+    input_size: 640
     d_model: !ref <d_model>
     nhead: 4
     num_encoder_layers: 6
@@ -156,14 +163,14 @@ frontend: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
     input_shape: [null, null, !ref <n_mels>]
     num_blocks: 2
     num_layers_per_block: 1
-    out_channels: (128, 128)
+    out_channels: (64, 32)
     kernel_sizes: (3, 3)
     strides: (2, 2)
     residuals: (False, False)
     padding: !ref <padding>
 
 encoder: !new:models.transformer_attn.Transformer
-    input_size: 2560
+    input_size: 640
     d_model: !ref <d_model>
     nhead: !ref <nhead>
     num_encoder_layers: !ref <num_encoder_layers>
@@ -182,9 +189,9 @@ encoder_proj: !new:speechbrain.nnet.linear.Linear
     n_neurons: !ref <joint_dim>
     bias: False
 
-#encoder_head: !new:speechbrain.nnet.linear.Linear
-#    input_size: !ref <joint_dim>
-#    n_neurons: !ref <vocab_size>
+encoder_head: !new:speechbrain.nnet.linear.Linear
+    input_size: !ref <joint_dim>
+    n_neurons: !ref <vocab_size>
 
 embedding: !new:speechbrain.nnet.embedding.Embedding
     num_embeddings: !ref <vocab_size>
@@ -203,9 +210,9 @@ decoder_proj: !new:speechbrain.nnet.linear.Linear
     n_neurons: !ref <joint_dim>
     bias: False
 
-#decoder_head: !new:speechbrain.nnet.linear.Linear
-#    input_size: !ref <joint_dim>
-#    n_neurons: !ref <vocab_size>
+decoder_head: !new:speechbrain.nnet.linear.Linear
+    input_size: !ref <joint_dim>
+    n_neurons: !ref <vocab_size>
 
 joiner: !new:speechbrain.nnet.transducer.transducer_joint.Transducer_joint
     joint: sum  # [sum | concat]
@@ -228,19 +235,19 @@ modules:
     frontend: !ref <frontend>
     encoder: !ref <encoder>
     encoder_proj: !ref <encoder_proj>
-    ##encoder_head: !ref <encoder_head>
+    encoder_head: !ref <encoder_head>
     embedding: !ref <embedding>
     decoder: !ref <decoder>
     decoder_proj: !ref <decoder_proj>
-    #decoder_head: !ref <decoder_head>
+    decoder_head: !ref <decoder_head>
     joiner: !ref <joiner>
     transducer_head: !ref <transducer_head>
 
 model: !new:torch.nn.ModuleList
     [[!ref <speaker_feature_extractor>, !ref <speaker_normalizer>, !ref <speaker_frontend>, !ref <speaker_encoder>,
       !ref <feature_extractor>, !ref <normalizer>, !ref <augmentation>, !ref <speed_perturb>,
-      !ref <frontend>, !ref <encoder>, !ref <encoder_proj>, #!ref <encoder_head>,
-      !ref <embedding>, !ref <decoder>, !ref <decoder_proj>, #!ref <decoder_head>,
+      !ref <frontend>, !ref <encoder>, !ref <encoder_proj>, !ref <encoder_head>,
+      !ref <embedding>, !ref <decoder>, !ref <decoder_proj>, !ref <decoder_head>,
       !ref <joiner>, !ref <transducer_head>]]
 
 # Loss functions
@@ -248,11 +255,11 @@ transducer_loss: !name:speechbrain.nnet.losses.transducer_loss
     use_torchaudio: True
     blank_index: !ref <blank_index>
 
-# ctc_loss: !name:speechbrain.nnet.losses.ctc_loss
-#    blank_index: !ref <blank_index>
+ctc_loss: !name:speechbrain.nnet.losses.ctc_loss
+    blank_index: !ref <blank_index>
 
-#ce_loss: !name:speechbrain.nnet.losses.nll_loss
-#    label_smoothing: 0.1
+ce_loss: !name:speechbrain.nnet.losses.nll_loss
+    label_smoothing: 0.1
 
 # Optimizers
 opt_class: !name:torch.optim.AdamW
@@ -261,9 +268,15 @@ opt_class: !name:torch.optim.AdamW
     eps: 1.e-8
     weight_decay: !ref <weight_decay>
 
-lr_annealing: !new:speechbrain.nnet.schedulers.NoamScheduler
-   lr_initial: !ref <lr>
-   n_warmup_steps: !ref <warmup_steps>
+#lr_annealing: !new:speechbrain.nnet.schedulers.NoamScheduler
+#   lr_initial: !ref <lr>
+#   n_warmup_steps: !ref <warmup_steps>
+
+lr_annealing: !new:speechbrain.nnet.schedulers.NewBobScheduler
+   initial_value: !ref <lr>
+   improvement_threshold: 0.0025
+   annealing_factor: 0.8
+   patient: 5
 
 # Searchers
 greedy_searcher: !new:speechbrain.decoders.transducer.TransducerBeamSearcher

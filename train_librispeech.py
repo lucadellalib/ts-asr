@@ -38,7 +38,7 @@ class ASR(sb.Brain):
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Add speed perturbation if specified
-        if stage == sb.Stage.TRAIN:
+        if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "speed_perturb" in self.modules:
                 wavs = self.modules.speed_perturb(wavs)
 
@@ -47,7 +47,7 @@ class ASR(sb.Brain):
         feats = self.modules.normalizer(feats, wavs_lens, epoch=self.hparams.epoch_counter.current)
 
         # Add augmentation if specified
-        if stage == sb.Stage.TRAIN:
+        if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "augmentation" in self.modules:
                 feats = self.modules.augmentation(feats)
 
@@ -107,7 +107,6 @@ class ASR(sb.Brain):
         ids = batch.id
         _, wavs_lens = batch.sig
         tokens, tokens_lens = batch.tokens
-        tokens_eos, tokens_eos_lens = batch.tokens_eos
 
         loss = self.hparams.transducer_loss(
             transducer_logits, tokens, wavs_lens, tokens_lens
@@ -117,6 +116,7 @@ class ASR(sb.Brain):
                 ctc_logprobs, tokens, wavs_lens, tokens_lens
             )
         if ce_logprobs is not None:
+            tokens_eos, tokens_eos_lens = batch.tokens_eos
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
                 ce_logprobs, tokens_eos, length=tokens_eos_lens
             )
@@ -210,7 +210,7 @@ class ASR(sb.Brain):
                     self.checkpointer.save_and_keep_only(
                         meta={"WER": stage_stats["WER"]},
                         min_keys=["WER"],
-                        num_to_keep=10,
+                        num_to_keep=self.hparams.keep_checkpoints,
                     )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
@@ -291,9 +291,9 @@ def dataio_prepare(hparams, tokenizer):
     )
     def text_pipeline(wrd):
         tokens_list = tokenizer.sp.encode_as_ids(wrd)
-        tokens_bos = torch.LongTensor([hparams["blank_index"]] + (tokens_list))
+        tokens_bos = torch.LongTensor([hparams["bos_index"]] + (tokens_list))
         yield tokens_bos
-        tokens_eos = torch.LongTensor(tokens_list + [hparams["blank_index"]])
+        tokens_eos = torch.LongTensor(tokens_list + [hparams["eos_index"]])
         yield tokens_eos
         tokens = torch.LongTensor(tokens_list)
         yield tokens
@@ -357,6 +357,10 @@ if __name__ == "__main__":
         annotation_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=hparams["character_coverage"],
+        bos_id=hparams["bos_index"],
+        eos_id=hparams["eos_index"],
+        pad_id=hparams["pad_index"],
+        unk_id=hparams["blank_index"],
         annotation_format="csv",
     )
 
@@ -364,7 +368,7 @@ if __name__ == "__main__":
     train_data, valid_data, test_data = dataio_prepare(hparams, tokenizer)
 
     # Download the pretrained models
-    if hparams["run_pretrainer"]:
+    if hparams["pretrain"]:
         run_on_main(hparams["pretrainer"].collect_files)
         run_on_main(hparams["pretrainer"].load_collected)
 

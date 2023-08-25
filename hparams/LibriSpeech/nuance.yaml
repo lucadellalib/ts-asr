@@ -47,7 +47,7 @@ grad_accumulation_factor: 1
 dynamic_batching: True
 train_batch_size: 8
 valid_batch_size: 8
-test_batch_size: 6
+test_batch_size: 4
 train_max_batch_length: 80
 valid_max_batch_length: 80
 test_max_batch_length: 60
@@ -58,7 +58,10 @@ dataloader_workers: 6
 vocab_size: 30  # If token_type=char, must be set equal to the number of found characters
 token_type: char  # ["unigram", "bpe", "char"]
 character_coverage: 1.0
-blank_index: 0  # Index(blank/bos/eos) = 0
+pad_index: 0
+bos_index: 1
+eos_index: 2
+blank_index: 3
 
 lr: 0.002
 warmup_steps: 10000
@@ -69,7 +72,7 @@ auto_mix_prec: False
 ckpt_interval_minutes: 600
 
 # Model parameters
-dropout: 0.0
+dropout: 0.1
 d_model: 256
 nhead: 4
 num_encoder_layers: 18
@@ -91,8 +94,10 @@ beam_size: 4
 state_beam: 2.3
 expand_beam: 2.3
 
-# Pretrain
-run_pretrainer: True
+# Options
+pretrain: True
+augment: True
+keep_checkpoints: 10
 
 # Modules
 feature_extractor: !new:speechbrain.lobes.features.Fbank
