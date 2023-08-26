@@ -12,12 +12,6 @@ Authors
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
-# Apply hotfix for SpeechBrain distributed execution
-import distributed as hotfix
-from speechbrain.utils import distributed
-
-distributed.if_main_process = hotfix.if_main_process
-
 import os
 import sys
 
@@ -44,7 +38,6 @@ class ASR(sb.Brain):
 
         # Extract features
         feats = self.modules.feature_extractor(wavs)
-        feats = self.modules.normalizer(feats, wavs_lens, epoch=self.hparams.epoch_counter.current)
 
         # Add augmentation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -54,12 +47,10 @@ class ASR(sb.Brain):
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
         encoder_out = self.modules.encoder(feats, wavs_lens)
-        encoder_out = self.modules.encoder_proj(encoder_out)
 
         # Forward decoder/predictor
         embs = self.modules.embedding(tokens_bos)
         decoder_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens)
-        decoder_out = self.modules.decoder_proj(decoder_out)
 
         # Forward joiner
         # Add label dimension to the encoder tensor: [B, T, H_enc] => [B, T, 1, H_enc]
@@ -72,29 +63,27 @@ class ASR(sb.Brain):
         transducer_logits = self.modules.transducer_head(joiner_out)
 
         # Compute outputs
-        hyps = None
         ctc_logprobs = None
         ce_logprobs = None
+        hyps = None
 
+        current_epoch = self.hparams.epoch_counter.current
         if stage == sb.Stage.TRAIN:
-            if (
-                hasattr(self.hparams, "ctc_cost")
-                and self.hparams.epoch_counter.current <= self.hparams.num_ctc_epochs
-            ):
+            if current_epoch <= self.hparams.num_ctc_epochs:
                 # Output layer for CTC log-probabilities
                 ctc_logits = self.modules.encoder_head(encoder_out)
                 ctc_logprobs = ctc_logits.log_softmax(dim=-1)
-            if (
-                hasattr(self.hparams, "ce_cost")
-                and self.hparams.epoch_counter.current <= self.hparams.num_ce_epochs
-            ):
+
+            if current_epoch <= self.hparams.num_ce_epochs:
                 # Output layer for CE log-probabilities
                 ce_logits = self.modules.decoder_head(decoder_out)
                 ce_logprobs = ce_logits.log_softmax(dim=-1)
+
         elif stage == sb.Stage.VALID:
             # During validation, run decoding only every valid_search_freq epochs to speed up training
-            if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
+            if current_epoch % self.hparams.valid_search_freq == 0:
                 hyps, scores, _, _ = self.hparams.greedy_searcher(encoder_out)
+
         else:
             hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
 
@@ -107,6 +96,7 @@ class ASR(sb.Brain):
         ids = batch.id
         _, wavs_lens = batch.sig
         tokens, tokens_lens = batch.tokens
+        tokens_eos, tokens_eos_lens = batch.tokens_eos
 
         loss = self.hparams.transducer_loss(
             transducer_logits, tokens, wavs_lens, tokens_lens
@@ -116,7 +106,6 @@ class ASR(sb.Brain):
                 ctc_logprobs, tokens, wavs_lens, tokens_lens
             )
         if ce_logprobs is not None:
-            tokens_eos, tokens_eos_lens = batch.tokens_eos
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
                 ce_logprobs, tokens_eos, length=tokens_eos_lens
             )
@@ -132,49 +121,10 @@ class ASR(sb.Brain):
 
         return loss
 
-    def fit_batch(self, batch):
-        should_step = self.step % self.grad_accumulation_factor == 0
-
-        with self.no_sync(not should_step):
-            # Managing automatic mixed precision
-            if self.auto_mix_prec:
-                with torch.autocast(torch.device(self.device).type):
-                    outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-
-                # Losses are excluded from mixed precision to avoid instabilities
-                loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
-
-                self.scaler.scale(loss / self.grad_accumulation_factor).backward()
-
-                if should_step:
-                    self.scaler.unscale_(self.optimizer)
-                    if self.check_gradients(loss):
-                        self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                    self.zero_grad(set_to_none=True)
-                    self.optimizer_step += 1
-                    self.hparams.lr_annealing(self.optimizer)
-            else:
-                if self.bfloat16_mix_prec:
-                    with torch.autocast(
-                        device_type=torch.device(self.device).type,
-                        dtype=torch.bfloat16,
-                    ):
-                        outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-                        loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
-                else:
-                    outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-                    loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
-                (loss / self.grad_accumulation_factor).backward()
-                if should_step:
-                    if self.check_gradients(loss):
-                        self.optimizer.step()
-                    self.zero_grad(set_to_none=True)
-                    self.optimizer_step += 1
-                    self.hparams.lr_annealing(self.optimizer)
-
-        self.on_fit_batch_end(batch, outputs, loss, should_step)
-        return loss.detach().cpu()
+    def on_fit_batch_end(self, batch, outputs, loss, should_step):
+        """Called after ``fit_batch()``, meant for calculating and logging metrics."""
+        if should_step:
+            self.hparams.noam_scheduler(self.optimizer)
 
     def on_stage_start(self, stage, epoch):
         """Gets called at the beginning of each epoch."""
@@ -185,11 +135,12 @@ class ASR(sb.Brain):
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of each epoch."""
         # Compute/store important stats
+        current_epoch = self.hparams.epoch_counter.current
         stage_stats = {"loss": stage_loss}
         if stage == sb.Stage.TRAIN:
             self.train_stats = stage_stats
         elif stage == sb.Stage.VALID:
-            if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
+            if current_epoch % self.hparams.valid_search_freq == 0:
                 stage_stats["CER"] = self.cer_metric.summarize("error_rate")
                 stage_stats["WER"] = self.wer_metric.summarize("error_rate")
         else:
@@ -198,14 +149,14 @@ class ASR(sb.Brain):
 
         # Perform end-of-iteration operations, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
-            lr = self.hparams.lr_annealing.current_lr
+            lr = self.hparams.noam_scheduler.current_lr
             steps = self.optimizer_step
             self.hparams.train_logger.log_stats(
                 stats_meta={"epoch": epoch, "lr": lr, "steps": steps},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
-            if self.hparams.epoch_counter.current % self.hparams.valid_search_freq == 0:
+            if current_epoch % self.hparams.valid_search_freq == 0:
                 if if_main_process():
                     self.checkpointer.save_and_keep_only(
                         meta={"WER": stage_stats["WER"]},
@@ -214,8 +165,7 @@ class ASR(sb.Brain):
                     )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
-                stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
-                test_stats=stage_stats,
+                stats_meta={"Epoch loaded": current_epoch}, test_stats=stage_stats,
             )
             if if_main_process():
                 with open(self.hparams.wer_file, "w") as w:
@@ -237,7 +187,7 @@ def dataio_prepare(hparams, tokenizer):
         # Sort training data to speed up training and get better results
         train_data = train_data.filtered_sorted(
             sort_key="duration",
-            key_max_value={"duration": hparams["avoid_if_longer_than"]},
+            key_max_value={"duration": hparams["train_remove_if_longer"]},
         )
 
     elif hparams["sorting"] == "descending":
@@ -245,7 +195,7 @@ def dataio_prepare(hparams, tokenizer):
         train_data = train_data.filtered_sorted(
             sort_key="duration",
             reverse=True,
-            key_max_value={"duration": hparams["avoid_if_longer_than"]},
+            key_max_value={"duration": hparams["train_remove_if_longer"]},
         )
 
     elif hparams["sorting"] == "random":
@@ -258,7 +208,11 @@ def dataio_prepare(hparams, tokenizer):
         csv_path=hparams["valid_csv"], replacements={"DATA_ROOT": data_folder},
     )
     # Sort the validation data so it is faster to validate
-    valid_data = valid_data.filtered_sorted(sort_key="duration", reverse=True)
+    valid_data = valid_data.filtered_sorted(
+        sort_key="duration",
+        reverse=True,
+        key_max_value={"duration": hparams["valid_remove_if_longer"]},
+    )
 
     # Sort the test data so it is faster to test
     test_data = {}
@@ -266,7 +220,11 @@ def dataio_prepare(hparams, tokenizer):
         test_data[split] = sb.dataio.dataset.DynamicItemDataset.from_csv(
             csv_path=test_csv, replacements={"DATA_ROOT": data_folder},
         )
-        test_data[split].filtered_sorted(sort_key="duration", reverse=True)
+        test_data[split].filtered_sorted(
+            sort_key="duration",
+            reverse=True,
+            key_max_value={"duration": hparams["test_remove_if_longer"]},
+        )
 
     datasets = [train_data, valid_data, *test_data.values()]
 
@@ -366,11 +324,6 @@ if __name__ == "__main__":
 
     # Create the datasets objects as well as tokenization and encoding
     train_data, valid_data, test_data = dataio_prepare(hparams, tokenizer)
-
-    # Download the pretrained models
-    if hparams["pretrain"]:
-        run_on_main(hparams["pretrainer"].collect_files)
-        run_on_main(hparams["pretrainer"].load_collected)
 
     # Trainer initialization
     brain = ASR(

@@ -83,7 +83,7 @@ class Transformer(TransformerInterface):
     >>> import torch
     >>>
     >>> batch_size = 4
-    >>> seq_length = 2048
+    >>> seq_length = 256
     >>> input_size = 80
     >>> d_model = 512
     >>> model = Transformer(input_size, d_model)
@@ -191,7 +191,7 @@ class Transformer(TransformerInterface):
             pos_embs=pos_embs_encoder,
         )
 
-        # Inject speaker embedding (at the end to avoid vanishing gradient problems)
+        # Inject speaker embedding
         if speaker_embs is not None:
             src += speaker_embs
 
@@ -220,7 +220,7 @@ class Transformer(TransformerInterface):
 # Example
 if __name__ == "__main__":
     batch_size = 4
-    seq_length = 2048
+    seq_length = 256
     input_size = 80
     d_model = 512
     model = Transformer(input_size, d_model)

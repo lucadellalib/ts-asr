@@ -20,7 +20,8 @@ Generate the LibriSpeechMix data in `<path-to-data-folder>` following the
 Clone the repository, navigate to `<path-to-repository>`, open a terminal and run:
 
 ```bash
-pip install -r requirements.txt
+pip install -e vendor/speechbrain
+tar -xf resources/microsoft--wavlm-base.tar.gz --directory resources
 ```
 
 ---------------------------------------------------------------------------------------------------------
@@ -61,7 +62,7 @@ train_librispeech.py hparams/LibriSpeech/conformer-t.yaml \
 
 ```bash
 nohup python -m torch.distributed.launch --nproc_per_node=8 \
-train_librispeech_mix.py hparams/LibriSpeechMix/conformer-t.yaml \
+train_librispeechmix.py hparams/LibriSpeechMix/conformer-t.yaml \
 --data_folder datasets/LibriSpeechMix --num_epochs 10 --d_model 256 \
 --distributed_launch &
 ```

@@ -45,7 +45,7 @@ class GSS(nn.Module):
     >>> import torch
     >>>
     >>> batch_size = 4
-    >>> seq_length = 2048
+    >>> seq_length = 256
     >>> input_size = 64
     >>> model = GSS(input_size)
     >>> input = torch.randn(batch_size, seq_length, input_size)
@@ -118,7 +118,7 @@ class GSS(nn.Module):
 # Example
 if __name__ == "__main__":
     batch_size = 4
-    seq_length = 2048
+    seq_length = 256
     input_size = 64
     model = GSS(input_size)
     input = torch.randn(batch_size, seq_length, input_size)

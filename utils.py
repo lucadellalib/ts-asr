@@ -36,7 +36,7 @@ def play_waveform(waveform, sample_rate):
     subprocess.call(["ffplay", "waveform.wav"])
 
 
-def plot_waveform(waveform, sample_rate, title="Waveform"):
+def plot_waveform(waveform, sample_rate, title="Waveform", output_image="waveform.png"):
     """Plot a waveform.
 
     Arguments
@@ -61,7 +61,7 @@ def plot_waveform(waveform, sample_rate, title="Waveform"):
     num_channels, num_frames = waveform.shape
     time_axis = np.arange(num_frames) / sample_rate
 
-    figure, axes = plt.subplots(num_channels, 1)
+    fig, axes = plt.subplots(num_channels, 1)
     if num_channels == 1:
         axes = [axes]
     for channel in range(num_channels):
@@ -69,11 +69,16 @@ def plot_waveform(waveform, sample_rate, title="Waveform"):
         axes[channel].grid(True)
         if num_channels > 1:
             axes[channel].set_ylabel(f"Channel {channel + 1}")
-    figure.suptitle(title)
+    fig.suptitle(title)
     plt.show(block=False)
+    fig.tight_layout()
+    plt.savefig(output_image, bbox_inches="tight")
+    plt.close()
 
 
-def plot_spectrogram(waveform, sample_rate=16000, title="Spectrogram"):
+def plot_spectrogram(
+    waveform, sample_rate=16000, title="Spectrogram", output_image="spectrogram.png"
+):
     """Plot a waveform spectrogram.
 
     Arguments
@@ -97,12 +102,15 @@ def plot_spectrogram(waveform, sample_rate=16000, title="Spectrogram"):
 
     num_channels, num_frames = waveform.shape
 
-    figure, axes = plt.subplots(num_channels, 1)
+    fig, axes = plt.subplots(num_channels, 1)
     if num_channels == 1:
         axes = [axes]
     for channel in range(num_channels):
         axes[channel].specgram(waveform[channel], Fs=sample_rate)
         if num_channels > 1:
             axes[channel].set_ylabel(f"Channel {channel + 1}")
-    figure.suptitle(title)
+    fig.suptitle(title)
     plt.show(block=False)
+    fig.tight_layout()
+    plt.savefig(output_image, bbox_inches="tight")
+    plt.close()

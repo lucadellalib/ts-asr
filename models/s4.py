@@ -68,7 +68,7 @@ class S4(nn.Module):
     >>> import torch
     >>>
     >>> batch_size = 4
-    >>> seq_length = 2048
+    >>> seq_length = 256
     >>> input_size = 80
     >>> d_model = 512
     >>> model = S4(input_size, d_model)
@@ -149,7 +149,7 @@ class S4(nn.Module):
 
         src = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask)
 
-        # Inject speaker embedding (at the end to avoid vanishing gradient problems)
+        # Inject speaker embedding
         if speaker_embs is not None:
             src += speaker_embs
 
@@ -202,7 +202,7 @@ class S4Encoder(nn.Module):
     >>> import torch
     >>>
     >>> batch_size = 4
-    >>> seq_length = 2048
+    >>> seq_length = 256
     >>> d_model = 512
     >>> src = torch.rand((batch_size, seq_length, d_model))
     >>> model = S4Encoder(num_layers=1, d_model=d_model, d_ffn=256)
@@ -293,7 +293,7 @@ class S4EncoderLayer(nn.Module):
     >>> import torch
     >>>
     >>> batch_size = 4
-    >>> seq_length = 2048
+    >>> seq_length = 256
     >>> d_model = 512
     >>> src = torch.rand((batch_size, seq_length, d_model))
     >>> model = S4EncoderLayer(d_model, d_ffn=256)
@@ -424,7 +424,7 @@ class ConvolutionModule(SBConvolutionModule):
 # Example
 if __name__ == "__main__":
     batch_size = 4
-    seq_length = 2048
+    seq_length = 256
     input_size = 80
     d_model = 512
     model = S4(input_size, d_model)
