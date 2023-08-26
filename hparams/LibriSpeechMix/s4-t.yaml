@@ -103,7 +103,7 @@ decoder_num_layers: 1
 joint_dim: 256
 
 # WavLM for speaker verification fine-tuned on LibriSpeech-960h (see https://huggingface.co/microsoft/wavlm-base-sv)
-speaker_encoder_path: resources/microsoft/wavlm-base-sv  # Must be compatible with Hugging Face interface
+speaker_encoder_path: resources/microsoft/wavlm-base-sv  # Must be compatible with Hugging Face AutoModelForAudioXVector
 speaker_embedding_dim: 512  # Must match the speaker encoder's embedding size
 
 # Decoding parameters
