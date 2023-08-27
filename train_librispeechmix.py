@@ -203,7 +203,7 @@ class TSASR(sb.Brain):
 
     def on_fit_batch_end(self, batch, outputs, loss, should_step):
         """Called after ``fit_batch()``, meant for calculating and logging metrics."""
-        if should_step:
+        if self.hparams.enable_scheduler and should_step:
             self.hparams.noam_scheduler(self.optimizer)
 
     def on_stage_start(self, stage, epoch):

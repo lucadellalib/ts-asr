@@ -58,11 +58,11 @@ ce_weight: 0.47
 grad_accumulation_factor: 4
 dynamic_batching: True
 train_batch_size: 6
-valid_batch_size: 6
-test_batch_size: 4
-train_max_batch_length: 50
-valid_max_batch_length: 80
-test_max_batch_length: 60
+valid_batch_size: 12
+test_batch_size: 10
+train_max_batch_length: 120
+valid_max_batch_length: 240
+test_max_batch_length: 200
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 6
@@ -74,6 +74,7 @@ blank_index: 0 # Index(blank/bos/eos/pad/unk) = 0
 
 lr: 0.002
 warmup_steps: 10000
+enable_scheduler: False
 
 nonfinite_patience: 10
 max_grad_norm: 30.0
