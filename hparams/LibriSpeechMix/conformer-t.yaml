@@ -37,7 +37,6 @@ save_folder: !ref <output_folder>/save
 train_remove_if_longer: 60.0
 valid_remove_if_longer: 60.0
 test_remove_if_longer: 60.0
-max_enroll_length: 40.0
 sample_rate: 16000
 sorting: descending
 
@@ -73,7 +72,7 @@ blank_index: 0  # Index(blank/bos/eos/pad/unk) = 0
 
 lr: 0.002
 warmup_steps: 10000
-enable_scheduler: False
+enable_scheduler: True
 
 nonfinite_patience: 10
 max_grad_norm: 30.0

@@ -74,7 +74,7 @@ blank_index: 0  # Index(blank/bos/eos/pad/unk) = 0
 
 lr: 0.002
 warmup_steps: 10000
-enable_scheduler: False
+enable_scheduler: True
 
 nonfinite_patience: 10
 max_grad_norm: 30.0
