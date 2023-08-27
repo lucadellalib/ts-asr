@@ -58,11 +58,11 @@ ce_weight: 0.47
 grad_accumulation_factor: 4
 dynamic_batching: True
 train_batch_size: 6
-valid_batch_size: 12
-test_batch_size: 10
-train_max_batch_length: 100
-valid_max_batch_length: 200
-test_max_batch_length: 160
+valid_batch_size: 10
+test_batch_size: 8
+train_max_batch_length: 80
+valid_max_batch_length: 160
+test_max_batch_length: 120
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 6
