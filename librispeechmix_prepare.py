@@ -18,7 +18,7 @@ __all__ = ["prepare_librispeechmix"]
 
 # Logging configuration
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(funcName)s - %(message)s",
+    level=logging.WARNING,  # format="%(asctime)s [%(levelname)s] %(funcName)s - %(message)s",
 )
 
 _LOGGER = logging.getLogger(__name__)

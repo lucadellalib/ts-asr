@@ -37,6 +37,7 @@ save_folder: !ref <output_folder>/save
 train_remove_if_longer: 60.0
 valid_remove_if_longer: 60.0
 test_remove_if_longer: 60.0
+max_enroll_length: 40.0
 sample_rate: 16000
 sorting: descending
 
@@ -58,9 +59,9 @@ dynamic_batching: True
 train_batch_size: 3
 valid_batch_size: 6
 test_batch_size: 5
-train_max_batch_length: 60
-valid_max_batch_length: 120
-test_max_batch_length: 100
+train_max_batch_length: 50
+valid_max_batch_length: 100
+test_max_batch_length: 80
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 6

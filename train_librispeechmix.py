@@ -36,6 +36,13 @@ class TSASR(sb.Brain):
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Extract speaker embedding
+        max_enroll_length = round(
+            self.hparams.max_enroll_length * self.hparams.sample_rate
+        )
+        enroll_wavs_lens = (enroll_wavs_lens * enroll_wavs.shape[1]).clamp(
+            max=max_enroll_length
+        ) / max_enroll_length
+        enroll_wavs = enroll_wavs[:, :max_enroll_length]
         with torch.no_grad():
             self.modules.speaker_encoder.eval()
             speaker_embs = self.modules.speaker_encoder(

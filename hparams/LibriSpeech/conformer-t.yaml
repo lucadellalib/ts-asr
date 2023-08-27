@@ -60,9 +60,9 @@ dynamic_batching: True
 train_batch_size: 6
 valid_batch_size: 12
 test_batch_size: 10
-train_max_batch_length: 120
-valid_max_batch_length: 240
-test_max_batch_length: 200
+train_max_batch_length: 100
+valid_max_batch_length: 200
+test_max_batch_length: 160
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 6
