@@ -237,11 +237,12 @@ class TSASR(sb.Brain):
                 valid_stats=stage_stats,
             )
             if current_epoch % self.hparams.valid_search_freq == 0:
-                self.checkpointer.save_and_keep_only(
-                    meta={"WER": stage_stats["WER"]},
-                    min_keys=["WER"],
-                    num_to_keep=self.hparams.keep_checkpoints,
-                )
+                if if_main_process():
+                    self.checkpointer.save_and_keep_only(
+                        meta={"WER": stage_stats["WER"]},
+                        min_keys=["WER"],
+                        num_to_keep=self.hparams.keep_checkpoints,
+                    )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
                 stats_meta={"Epoch loaded": current_epoch}, test_stats=stage_stats,
