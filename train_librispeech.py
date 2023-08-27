@@ -21,7 +21,7 @@ import torchaudio
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.dataio.sampler import DynamicBatchSampler
 from speechbrain.tokenizers.SentencePiece import SentencePiece
-from speechbrain.utils.distributed import if_main_process, run_on_main
+from speechbrain.utils.distributed import ddp_barrier, if_main_process, run_on_main
 
 
 class ASR(sb.Brain):
@@ -46,21 +46,19 @@ class ASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        encoder_out = self.modules.encoder(feats, wavs_lens)
+        enc_out = self.modules.encoder(feats, wavs_lens)
 
         # Forward decoder/predictor
         embs = self.modules.embedding(tokens_bos)
-        decoder_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens)
+        dec_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens)
 
         # Forward joiner
         # Add label dimension to the encoder tensor: [B, T, H_enc] => [B, T, 1, H_enc]
         # Add time dimension to the decoder tensor: [B, U, H_dec] => [B, 1, U, H_dec]
-        joiner_out = self.modules.joiner(
-            encoder_out[..., None, :], decoder_out[:, None, ...]
-        )
+        join_out = self.modules.joiner(enc_out[..., None, :], dec_out[:, None, ...])
 
         # Compute transducer log-probabilities
-        transducer_logits = self.modules.transducer_head(joiner_out)
+        logits = self.modules.transducer_head(join_out)
 
         # Compute outputs
         ctc_logprobs = None
@@ -71,36 +69,34 @@ class ASR(sb.Brain):
         if stage == sb.Stage.TRAIN:
             if current_epoch <= self.hparams.num_ctc_epochs:
                 # Output layer for CTC log-probabilities
-                ctc_logits = self.modules.encoder_head(encoder_out)
+                ctc_logits = self.modules.encoder_head(enc_out)
                 ctc_logprobs = ctc_logits.log_softmax(dim=-1)
 
             if current_epoch <= self.hparams.num_ce_epochs:
                 # Output layer for CE log-probabilities
-                ce_logits = self.modules.decoder_head(decoder_out)
+                ce_logits = self.modules.decoder_head(dec_out)
                 ce_logprobs = ce_logits.log_softmax(dim=-1)
 
         elif stage == sb.Stage.VALID:
             # During validation, run decoding only every valid_search_freq epochs to speed up training
             if current_epoch % self.hparams.valid_search_freq == 0:
-                hyps, scores, _, _ = self.hparams.greedy_searcher(encoder_out)
+                hyps, scores, _, _ = self.hparams.greedy_searcher(enc_out)
 
         else:
-            hyps, scores, _, _ = self.hparams.beam_searcher(encoder_out)
+            hyps, scores, _, _ = self.hparams.beam_searcher(enc_out)
 
-        return transducer_logits, ctc_logprobs, ce_logprobs, hyps
+        return logits, ctc_logprobs, ce_logprobs, hyps
 
     def compute_objectives(self, predictions, batch, stage):
         """Computes the transducer loss + (CTC + CE) given predictions and targets."""
-        transducer_logits, ctc_logprobs, ce_logprobs, hyps = predictions
+        logits, ctc_logprobs, ce_logprobs, hyps = predictions
 
         ids = batch.id
         _, wavs_lens = batch.sig
         tokens, tokens_lens = batch.tokens
         tokens_eos, tokens_eos_lens = batch.tokens_eos
 
-        loss = self.hparams.transducer_loss(
-            transducer_logits, tokens, wavs_lens, tokens_lens
-        )
+        loss = self.hparams.transducer_loss(logits, tokens, wavs_lens, tokens_lens)
         if ctc_logprobs is not None:
             loss += self.hparams.ctc_weight * self.hparams.ctc_loss(
                 ctc_logprobs, tokens, wavs_lens, tokens_lens
@@ -120,6 +116,71 @@ class ASR(sb.Brain):
             self.wer_metric.append(ids, predicted_words, target_words)
 
         return loss
+
+    def fit_batch(self, batch):
+        """Fit one batch, override to do multiple updates."""
+        should_step = (self.valid_step + 1) % self.grad_accumulation_factor == 0
+
+        # should_step=True => synchronize gradient between DDP processes
+        with self.no_sync(not should_step):
+            with torch.autocast(
+                device_type=torch.device(self.device).type,
+                dtype=torch.bfloat16 if self.bfloat16_mix_prec else torch.float16,
+                enabled=self.auto_mix_prec,
+            ):
+                outputs = self.compute_forward(batch, sb.Stage.TRAIN)
+
+            # Losses are excluded from mixed precision to avoid instabilities
+            loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
+
+            self.check_gradients(loss)
+
+            if self.auto_mix_prec:
+                self.scaler.scale(loss / self.grad_accumulation_factor).backward()
+            else:
+                (loss / self.grad_accumulation_factor).backward()
+
+            if should_step:
+                if self.auto_mix_prec:
+                    self.scaler.unscale_(self.optimizer)
+                if self.max_grad_norm > 0.0:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.modules.parameters(), self.max_grad_norm
+                    )
+                if self.auto_mix_prec:
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    self.optimizer.step()
+                self.zero_grad(set_to_none=True)
+                self.optimizer_step += 1
+            self.valid_step += 1
+
+        self.on_fit_batch_end(batch, outputs, loss, should_step)
+        return loss.detach().cpu()
+
+    def check_gradients(self, loss):
+        if loss.isfinite():
+            return True
+
+        self.nonfinite_count += 1
+
+        # Print helpful debug info
+        sb.core.logger.warning(f"Loss is {loss}.")
+        for p in self.modules.parameters():
+            if not torch.isfinite(p).all():
+                sb.core.logger.warning("Parameter is not finite: " + str(p))
+
+        # Check if patience is exhausted
+        if self.nonfinite_count > self.nonfinite_patience:
+            raise ValueError(
+                "Loss is not finite and patience is exhausted. "
+                "To debug, wrap `fit()` with "
+                "autograd's `detect_anomaly()`, e.g.\n\nwith "
+                "torch.autograd.detect_anomaly():\n\tbrain.fit(...)"
+            )
+        sb.core.logger.warning("Patience not yet exhausted, ignoring this batch.")
+        return False
 
     def on_fit_batch_end(self, batch, outputs, loss, should_step):
         """Called after ``fit_batch()``, meant for calculating and logging metrics."""
@@ -249,9 +310,9 @@ def dataio_prepare(hparams, tokenizer):
     )
     def text_pipeline(wrd):
         tokens_list = tokenizer.sp.encode_as_ids(wrd)
-        tokens_bos = torch.LongTensor([hparams["bos_index"]] + (tokens_list))
+        tokens_bos = torch.LongTensor([hparams["blank_index"]] + (tokens_list))
         yield tokens_bos
-        tokens_eos = torch.LongTensor(tokens_list + [hparams["eos_index"]])
+        tokens_eos = torch.LongTensor(tokens_list + [hparams["blank_index"]])
         yield tokens_eos
         tokens = torch.LongTensor(tokens_list)
         yield tokens
@@ -315,9 +376,6 @@ if __name__ == "__main__":
         annotation_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=hparams["character_coverage"],
-        bos_id=hparams["bos_index"],
-        eos_id=hparams["eos_index"],
-        pad_id=hparams["pad_index"],
         unk_id=hparams["blank_index"],
         annotation_format="csv",
     )

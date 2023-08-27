@@ -14,20 +14,20 @@ __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Data preparation
 data_folder: !PLACEHOLDER
-splits: [train-2mix, dev-clean-2mix, test-clean-2mix]
-max_enrolls: 2  # As in the public dev/test set
-test_splits: [test-clean-2mix]
-train_json: !ref <save_folder>/train.json
-valid_json: !ref <save_folder>/dev.json
-test_json: !ref <save_folder>/test.json
+#splits: [train-2mix, dev-clean-2mix, test-clean-2mix]
+#max_enrolls: 2  # As in the public dev/test set
+#test_splits: [test-clean-2mix]
+#train_json: !ref <save_folder>/train.json
+#valid_json: !ref <save_folder>/dev.json
+#test_json: !ref <save_folder>/test.json
 
 # Settings for overfitting test
-#splits: [dev-clean-3mix]
-#max_enrolls: 2  # As in the public dev/test set
-#test_splits: [dev-clean-3mix]
-#train_json: !ref <save_folder>/dev.json
-#valid_json: !ref <save_folder>/dev.json
-#test_json: !ref <save_folder>/dev.json
+splits: [dev-clean-3mix]
+max_enrolls: 2  # As in the public dev/test set
+test_splits: [dev-clean-3mix]
+train_json: !ref <save_folder>/dev.json
+valid_json: !ref <save_folder>/dev.json
+test_json: !ref <save_folder>/dev.json
 
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>
@@ -58,22 +58,19 @@ dynamic_batching: True
 train_batch_size: 6
 valid_batch_size: 6
 test_batch_size: 4
-train_max_batch_length: 60
-valid_max_batch_length: 60
-test_max_batch_length: 40
+train_max_batch_length: 50
+valid_max_batch_length: 80
+test_max_batch_length: 60
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 6
 
-vocab_size: 32  # If token_type=char, must be set equal to the number of found characters
+vocab_size: 29  # If token_type=char, must be set equal to the number of found characters
 token_type: char  # ["unigram", "bpe", "char"]
 character_coverage: 1.0
-pad_index: 0
-bos_index: 1
-eos_index: 2
-blank_index: 3
+blank_index: 0  # Index(blank/bos/eos/pad/unk) = 0
 
-lr: 0.001
+lr: 0.002
 warmup_steps: 10000
 
 nonfinite_patience: 10
@@ -103,7 +100,7 @@ speaker_encoder_path: resources/microsoft/wavlm-base-sv  # Must be compatible wi
 speaker_embedding_dim: 512  # Must match the speaker encoder's embedding size
 
 # Decoding parameters
-valid_search_freq: 5
+valid_search_freq: 3
 beam_size: 4
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
@@ -162,7 +159,7 @@ embedding: !new:speechbrain.nnet.embedding.Embedding
     num_embeddings: !ref <vocab_size>
     embedding_dim: !ref <embedding_dim>
     #consider_as_one_hot: True
-    blank_id: !ref <blank_index>
+    #blank_id: !ref <blank_index>
 
 decoder: !new:speechbrain.nnet.RNN.LSTM
     input_shape: [null, null, !ref <embedding_dim>]
@@ -173,13 +170,8 @@ decoder_head: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <joint_dim>
     n_neurons: !ref <vocab_size>
 
-joint_network: !new:speechbrain.nnet.linear.Linear
-    input_size: !ref <joint_dim>
-    n_neurons: !ref <joint_dim>
-
 joiner: !new:speechbrain.nnet.transducer.transducer_joint.Transducer_joint
-    joint: sum  # [sum | concat]
-    joint_network: !ref <joint_network>
+    joint: sum
     nonlinearity: !name:torch.nn.ReLU
 
 transducer_linear1: !new:speechbrain.nnet.linear.Linear

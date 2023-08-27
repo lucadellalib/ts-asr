@@ -151,6 +151,7 @@ def prepare_librispeechmix(
         _LOGGER.info(f"Writing {output_json}...")
         with open(output_json, "w", encoding="utf-8") as fw:
             json.dump(output_entries, fw, ensure_ascii=False, indent=4)
+        return
 
     _LOGGER.info(
         "----------------------------------------------------------------------",
