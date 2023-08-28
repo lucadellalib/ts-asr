@@ -77,6 +77,8 @@ class Transformer(TransformerInterface):
     use_linear_after_conv : bool, optional
         If True, will apply a linear transformation of size `input_size // 2`.
         -> Branchformer.
+    injection_mode : str, optional
+        The embedding injection mode (sum, cat, or prod).
 
     Example
     -------
@@ -115,6 +117,7 @@ class Transformer(TransformerInterface):
         csgu_linear_units: "Optional[int]" = 3072,
         gate_activation: "Optional[nn.Module]" = nn.Identity,
         use_linear_after_conv: "Optional[bool]" = False,
+        injection_mode: "str" = "sum",
     ):
         super().__init__(
             d_model=d_model,
@@ -138,6 +141,7 @@ class Transformer(TransformerInterface):
             gate_activation=gate_activation,
             use_linear_after_conv=use_linear_after_conv,
         )
+        self.injection_mode = injection_mode
 
         self.custom_src_module = ModuleList(
             Linear(
@@ -145,6 +149,11 @@ class Transformer(TransformerInterface):
             ),
             torch.nn.Dropout(dropout),
         )
+
+        if injection_mode == "cat":
+            self.cat_proj = Linear(
+                input_size=2 * d_model, n_neurons=d_model, bias=True,
+            )
 
         # Reset parameters using xavier_normal_
         self._init_params()
@@ -177,6 +186,18 @@ class Transformer(TransformerInterface):
         src_key_padding_mask, src_mask = self._make_masks(src, wav_len)
         src = self.custom_src_module(src)
 
+        # Inject speaker embedding
+        if speaker_embs is not None:
+            if self.injection_mode == "sum":
+                src += speaker_embs
+            elif self.injection_mode == "prod":
+                src *= speaker_embs
+            elif self.injection_mode == "cat":
+                src = torch.cat([src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1)
+                src = self.cat_proj(src)
+            else:
+                raise NotImplementedError
+
         # Add positional encoding to queries if are sinusoidal
         if self.attention_type == "RelPosMHAXL":
             pos_embs_encoder = self.positional_encoding(src)
@@ -190,10 +211,6 @@ class Transformer(TransformerInterface):
             src_key_padding_mask=src_key_padding_mask,
             pos_embs=pos_embs_encoder,
         )
-
-        # Inject speaker embedding
-        if speaker_embs is not None:
-            src += speaker_embs
 
         return src
 

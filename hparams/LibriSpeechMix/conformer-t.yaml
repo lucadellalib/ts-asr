@@ -38,7 +38,7 @@ train_remove_if_longer: 60.0
 valid_remove_if_longer: 60.0
 test_remove_if_longer: 60.0
 sample_rate: 16000
-sorting: descending
+sorting: ascending
 
 # Features
 n_fft: 512
@@ -89,10 +89,11 @@ num_encoder_layers: 12
 d_ffn: 2048
 kernel_size: 31
 causal: False
-padding: same
+padding: same  # Set to causal if `causal` is True
+injection_mode: cat
 
 #embedding_dim: 128
-decoder_neurons: 256
+decoder_neurons: 512
 decoder_num_layers: 1
 
 joint_dim: 640
@@ -102,7 +103,7 @@ speaker_encoder_path: resources/microsoft/wavlm-base-sv  # Must be compatible wi
 speaker_embedding_dim: 512  # Must match the speaker encoder's embedding size
 
 # Decoding parameters
-valid_search_freq: 3
+valid_search_freq: 5
 beam_size: 4
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
@@ -114,6 +115,10 @@ feature_extractor: !new:speechbrain.lobes.features.Fbank
     n_fft: !ref <n_fft>
     n_mels: !ref <n_mels>
     win_length: !ref <win_length>
+
+normalizer: !new:speechbrain.processing.features.InputNormalization
+    norm_type: sentence
+    update_until_epoch: 4
 
 augmentation: !new:speechbrain.lobes.augment.SpecAugment
     time_warp: True
@@ -154,6 +159,7 @@ encoder: !new:models.transformer.Transformer
     encoder_module: conformer
     attention_type: RelPosMHAXL
     causal: !ref <causal>
+    injection_mode: !ref <injection_mode>
 
 encoder_proj: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <d_model>
@@ -196,6 +202,7 @@ speaker_proj: !new:speechbrain.nnet.linear.Linear
 
 modules:
     feature_extractor: !ref <feature_extractor>
+    normalizer: !ref <normalizer>
     augmentation: !ref <augmentation>
     speed_perturb: !ref <speed_perturb>
     frontend: !ref <frontend>
@@ -211,7 +218,8 @@ modules:
     speaker_proj: !ref <speaker_proj>
 
 model: !new:torch.nn.ModuleList
-    [[!ref <frontend>, !ref <encoder>, !ref <encoder_proj>,
+    [[!ref <feature_extractor>, !ref <normalizer>,
+      !ref <frontend>, !ref <encoder>, !ref <encoder_proj>,
       !ref <embedding>, !ref <decoder>, !ref <decoder_proj>,
       !ref <joiner>, !ref <transducer_head>,
       !ref <speaker_proj>]]

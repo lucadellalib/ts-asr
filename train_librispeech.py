@@ -27,6 +27,8 @@ from speechbrain.utils.distributed import ddp_barrier, if_main_process, run_on_m
 class ASR(sb.Brain):
     def compute_forward(self, batch, stage):
         """Forward computations from the waveform batches to the output probabilities."""
+        current_epoch = self.hparams.epoch_counter.current
+
         batch = batch.to(self.device)
         wavs, wavs_lens = batch.sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
@@ -38,6 +40,7 @@ class ASR(sb.Brain):
 
         # Extract features
         feats = self.modules.feature_extractor(wavs)
+        feats = self.modules.normalizer(feats, wavs_lens, epoch=current_epoch)
 
         # Add augmentation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -55,11 +58,11 @@ class ASR(sb.Brain):
         dec_out = self.modules.decoder_proj(dec_out)
 
         # Forward joiner
-        # Add label dimension to the encoder tensor: [B, T, H_enc] => [B, T, 1, H_enc]
-        # Add time dimension to the decoder tensor: [B, U, H_dec] => [B, 1, U, H_dec]
+        # Add target sequence dimension to the encoder tensor: [B, T, H_enc] => [B, T, 1, H_enc]
+        # Add source sequence dimension to the decoder tensor: [B, U, H_dec] => [B, 1, U, H_dec]
         join_out = self.modules.joiner(enc_out[..., None, :], dec_out[:, None, ...])
 
-        # Compute transducer log-probabilities
+        # Compute transducer logits
         logits = self.modules.transducer_head(join_out)
 
         # Compute outputs
@@ -67,7 +70,6 @@ class ASR(sb.Brain):
         ce_logprobs = None
         hyps = None
 
-        current_epoch = self.hparams.epoch_counter.current
         if stage == sb.Stage.TRAIN:
             if current_epoch <= self.hparams.num_ctc_epochs:
                 # Output layer for CTC log-probabilities

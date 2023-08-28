@@ -58,6 +58,8 @@ class S4(nn.Module):
         Whether to use bias in the convolutional layers.
     causal : bool, optional
         Whether the encoder should be causal.
+    injection_mode : str, optional
+        The embedding injection mode (sum, cat, or prod).
     s4_layer_type : type, optional
         The S4 layer type.
     s4_layer_kwargs : dict, optional
@@ -89,10 +91,12 @@ class S4(nn.Module):
         kernel_size: "Optional[int]" = 31,
         bias: "Optional[bool]" = True,
         causal: "Optional[bool]" = False,
+        injection_mode: "str" = "sum",
         s4_layer_type=DSS,
         s4_layer_kwargs={},
     ):
         super().__init__()
+        self.injection_mode = injection_mode
 
         # Initialize the encoder
         if num_encoder_layers > 0:
@@ -115,6 +119,11 @@ class S4(nn.Module):
             ),
             torch.nn.Dropout(dropout),
         )
+
+        if injection_mode == "cat":
+            self.cat_proj = Linear(
+                input_size=2 * d_model, n_neurons=d_model, bias=True,
+            )
 
         # Reset parameters using xavier_normal_
         self._init_params()
@@ -147,11 +156,19 @@ class S4(nn.Module):
         src_key_padding_mask, _ = self._make_masks(src, wav_len)
         src = self.custom_src_module(src)
 
-        src = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask)
-
         # Inject speaker embedding
         if speaker_embs is not None:
-            src += speaker_embs
+            if self.injection_mode == "sum":
+                src += speaker_embs
+            elif self.injection_mode == "prod":
+                src *= speaker_embs
+            elif self.injection_mode == "cat":
+                src = torch.cat([src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1)
+                src = self.cat_proj(src)
+            else:
+                raise NotImplementedError
+
+        src = self.encoder(src=src, src_key_padding_mask=src_key_padding_mask)
 
         return src
 
