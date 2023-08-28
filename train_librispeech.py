@@ -47,10 +47,12 @@ class ASR(sb.Brain):
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
         enc_out = self.modules.encoder(feats, wavs_lens)
+        enc_out = self.modules.encoder_proj(enc_out)
 
         # Forward decoder/predictor
         embs = self.modules.embedding(tokens_bos)
         dec_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens)
+        dec_out = self.modules.decoder_proj(dec_out)
 
         # Forward joiner
         # Add label dimension to the encoder tensor: [B, T, H_enc] => [B, T, 1, H_enc]
