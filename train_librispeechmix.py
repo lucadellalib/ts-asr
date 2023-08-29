@@ -13,6 +13,7 @@ Authors
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
+import math
 import os
 import sys
 
@@ -37,13 +38,21 @@ class TSASR(sb.Brain):
         enroll_wavs, enroll_wavs_lens = batch.enroll_sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
+        # Trim enrollment utterance if too long
+        min_enroll_length = math.ceil(self.hparams.min_enroll_length * self.hparams.sample_rate)
+        max_enroll_length = math.ceil(self.hparams.max_enroll_length * self.hparams.sample_rate)
+        enroll_wavs_lens = (enroll_wavs_lens * enroll_wavs.shape[1]).clamp(
+            max=max_enroll_length,
+        ) / max_enroll_length
+        enroll_wavs = enroll_wavs[:, :max_enroll_length]
+
         # Extract speaker embedding
         with torch.no_grad():
             self.modules.speaker_encoder.eval()
             speaker_embs = self.modules.speaker_encoder(
                 input_values=enroll_wavs,
                 attention_mask=length_to_mask(
-                    (enroll_wavs_lens * enroll_wavs.shape[1]).round().int()
+                    (enroll_wavs_lens * enroll_wavs.shape[1]).ceil().clamp(min=min_enroll_length).int()
                 ).long(),  # 0 for masked tokens
                 output_attentions=False,
                 output_hidden_states=False,
@@ -321,6 +330,7 @@ def dataio_prepare(hparams, tokenizer):
             sample_rate, hparams["sample_rate"],
         )(mixed_sig)
         yield resampled_mixed_sig
+
         # Enrollment signal
         sample_rate = torchaudio.info(enroll_wav).sample_rate
         enroll_sig = sb.dataio.dataio.read_audio(enroll_wav)

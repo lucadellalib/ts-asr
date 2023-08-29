@@ -37,6 +37,8 @@ save_folder: !ref <output_folder>/save
 train_remove_if_longer: 60.0
 valid_remove_if_longer: 60.0
 test_remove_if_longer: 60.0
+min_enroll_length: 0.325  # Minimum allowed by WavLM
+max_enroll_length: 40.0
 sample_rate: 16000
 sorting: ascending
 

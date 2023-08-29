@@ -14,20 +14,20 @@ __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Data preparation
 data_folder: !PLACEHOLDER
-splits: [train-2mix, dev-clean-2mix, test-clean-2mix]
-max_enrolls: 2  # As in the public dev/test set
-test_splits: [test-clean-2mix]
-train_json: !ref <save_folder>/train.json
-valid_json: !ref <save_folder>/dev.json
-test_json: !ref <save_folder>/test.json
+#splits: [train-2mix, dev-clean-2mix, test-clean-2mix]
+#max_enrolls: 2  # As in the public dev/test set
+#test_splits: [test-clean-2mix]
+#train_json: !ref <save_folder>/train.json
+#valid_json: !ref <save_folder>/dev.json
+#test_json: !ref <save_folder>/test.json
 
 # Settings for overfitting test
-#splits: [dev-clean-3mix]
-#max_enrolls: 2  # As in the public dev/test set
-#test_splits: [dev-clean-3mix]
-#train_json: !ref <save_folder>/dev.json
-#valid_json: !ref <save_folder>/dev.json
-#test_json: !ref <save_folder>/dev.json
+splits: [dev-clean-3mix]
+max_enrolls: 2  # As in the public dev/test set
+test_splits: [dev-clean-3mix]
+train_json: !ref <save_folder>/dev.json
+valid_json: !ref <save_folder>/dev.json
+test_json: !ref <save_folder>/dev.json
 
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>
@@ -37,6 +37,8 @@ save_folder: !ref <output_folder>/save
 train_remove_if_longer: 60.0
 valid_remove_if_longer: 60.0
 test_remove_if_longer: 60.0
+min_enroll_length: 0.325  # Minimum allowed by WavLM
+max_enroll_length: 40.0
 sample_rate: 16000
 sorting: ascending
 
