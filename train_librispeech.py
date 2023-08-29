@@ -300,9 +300,7 @@ def dataio_prepare(hparams, tokenizer):
         # Signal
         sample_rate = torchaudio.info(wav).sample_rate
         sig = sb.dataio.dataio.read_audio(wav)
-        sig = torchaudio.functional.resample(
-            sig, sample_rate, hparams["sample_rate"],
-        )
+        sig = torchaudio.functional.resample(sig, sample_rate, hparams["sample_rate"],)
         return sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)

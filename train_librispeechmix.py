@@ -23,7 +23,6 @@ import torchaudio
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.dataio.dataio import length_to_mask
 from speechbrain.dataio.sampler import DynamicBatchSampler
-from speechbrain.processing.signal_processing import rescale
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import if_main_process, run_on_main
 from transformers import AutoModelForAudioXVector
@@ -313,7 +312,9 @@ def dataio_prepare(hparams, tokenizer):
     datasets = [train_data, valid_data, test_data]
 
     # 2. Define audio pipeline
-    @sb.utils.data_pipeline.takes("mixed_wav", "enroll_wav", "delays", "wavs", "target_speaker_index")
+    @sb.utils.data_pipeline.takes(
+        "mixed_wav", "enroll_wav", "delays", "wavs", "target_speaker_index"
+    )
     @sb.utils.data_pipeline.provides("mixed_sig", "enroll_sig")
     def audio_pipeline(mixed_wav, enroll_wav, delays, wavs, target_speaker_index):
         # Mixed signal
@@ -351,7 +352,9 @@ def dataio_prepare(hparams, tokenizer):
             enroll_sig, sample_rate, hparams["sample_rate"],
         )
         # Trim enrollment signal if too long
-        enroll_sig = enroll_sig[:math.ceil(hparams["max_enroll_length"] * hparams["sample_rate"])]
+        enroll_sig = enroll_sig[
+            : math.ceil(hparams["max_enroll_length"] * hparams["sample_rate"])
+        ]
         yield enroll_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
