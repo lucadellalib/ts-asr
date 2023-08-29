@@ -122,8 +122,8 @@ def prepare_librispeechmix(
                     texts = input_entry["texts"]
                     speaker_profile = input_entry["speaker_profile"]
                     speaker_profile_index = input_entry["speaker_profile_index"]
-                    # wavs = input_entry["wavs"]
-                    # delays = input_entry["delays"]
+                    wavs = input_entry["wavs"]
+                    delays = input_entry["delays"]
                     # speakers = input_entry["speakers"]
                     # durations = input_entry["durations"]
                     # genders = input_entry["genders"]
@@ -132,6 +132,7 @@ def prepare_librispeechmix(
                     duration = info.num_frames / info.sample_rate
 
                     mixed_wav = os.path.join("{DATA_ROOT}", "data", mixed_wav)
+                    wavs = [os.path.join("{DATA_ROOT}", "data", wav) for wav in wavs]
                     for i, (text, idx) in enumerate(zip(texts, speaker_profile_index)):
                         ID_text = f"{ID}_text-{i}"
                         enroll_wavs = speaker_profile[idx]
@@ -143,6 +144,9 @@ def prepare_librispeechmix(
                                 "enroll_wav": enroll_wav,
                                 "wrd": text,
                                 "duration": duration,
+                                "wavs": wavs,
+                                "delays": delays,
+                                "target_speaker_index": i,
                             }
                             output_entries[ID_enroll] = output_entry
 

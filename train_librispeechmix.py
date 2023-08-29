@@ -23,6 +23,7 @@ import torchaudio
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.dataio.dataio import length_to_mask
 from speechbrain.dataio.sampler import DynamicBatchSampler
+from speechbrain.processing.signal_processing import rescale
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import if_main_process, run_on_main
 from transformers import AutoModelForAudioXVector
@@ -38,21 +39,13 @@ class TSASR(sb.Brain):
         enroll_wavs, enroll_wavs_lens = batch.enroll_sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
-        # Trim enrollment utterance if too long
-        min_enroll_length = math.ceil(self.hparams.min_enroll_length * self.hparams.sample_rate)
-        max_enroll_length = math.ceil(self.hparams.max_enroll_length * self.hparams.sample_rate)
-        enroll_wavs_lens = (enroll_wavs_lens * enroll_wavs.shape[1]).clamp(
-            max=max_enroll_length,
-        ) / max_enroll_length
-        enroll_wavs = enroll_wavs[:, :max_enroll_length]
-
         # Extract speaker embedding
         with torch.no_grad():
             self.modules.speaker_encoder.eval()
             speaker_embs = self.modules.speaker_encoder(
                 input_values=enroll_wavs,
                 attention_mask=length_to_mask(
-                    (enroll_wavs_lens * enroll_wavs.shape[1]).ceil().clamp(min=min_enroll_length).int()
+                    (enroll_wavs_lens * enroll_wavs.shape[1]).int()
                 ).long(),  # 0 for masked tokens
                 output_attentions=False,
                 output_hidden_states=False,
@@ -86,10 +79,10 @@ class TSASR(sb.Brain):
         # Forward joiner
         # Add target sequence dimension to the encoder tensor: [B, T, H_enc] => [B, T, 1, H_enc]
         # Add source sequence dimension to the decoder tensor: [B, U, H_dec] => [B, 1, U, H_dec]
-        join_out = self.modules.joiner(enc_out[..., None, :], dec_out[:, None, ...])
+        joiner_out = self.modules.joiner(enc_out[..., None, :], dec_out[:, None, ...])
 
         # Compute transducer logits
-        logits = self.modules.transducer_head(join_out)
+        logits = self.modules.transducer_head(joiner_out)
 
         # Compute outputs
         ctc_logprobs = None
@@ -320,24 +313,46 @@ def dataio_prepare(hparams, tokenizer):
     datasets = [train_data, valid_data, test_data]
 
     # 2. Define audio pipeline
-    @sb.utils.data_pipeline.takes("mixed_wav", "enroll_wav")
+    @sb.utils.data_pipeline.takes("mixed_wav", "enroll_wav", "delays", "wavs", "target_speaker_index")
     @sb.utils.data_pipeline.provides("mixed_sig", "enroll_sig")
-    def audio_pipeline(mixed_wav, enroll_wav):
+    def audio_pipeline(mixed_wav, enroll_wav, delays, wavs, target_speaker_index):
         # Mixed signal
-        sample_rate = torchaudio.info(mixed_wav).sample_rate
-        mixed_sig = sb.dataio.dataio.read_audio(mixed_wav)
-        resampled_mixed_sig = torchaudio.transforms.Resample(
-            sample_rate, hparams["sample_rate"],
-        )(mixed_sig)
-        yield resampled_mixed_sig
+        if hparams["gain_nontarget"] == 0:
+            sample_rate = torchaudio.info(mixed_wav).sample_rate
+            mixed_sig = sb.dataio.dataio.read_audio(mixed_wav)
+            mixed_sig = torchaudio.functional.resample(
+                mixed_sig, sample_rate, hparams["sample_rate"],
+            )
+        else:
+            # Dynamic mixing with gain
+            sigs = []
+            for wav in wavs:
+                sample_rate = torchaudio.info(wav).sample_rate
+                sig = sb.dataio.dataio.read_audio(wav)
+                sig = torchaudio.functional.resample(
+                    sig, sample_rate, hparams["sample_rate"],
+                )
+                sigs.append(sig)
+            frame_delays = [math.ceil(d * hparams["sample_rate"]) for d in delays]
+            max_length = max([len(x) + d for x, d in zip(sigs, frame_delays)])
+            mixed_sig = torch.zeros(max_length)
+            for i, (sig, frame_delay) in enumerate(zip(sigs, frame_delays)):
+                if i != target_speaker_index:
+                    sig = torchaudio.functional.gain(sig, hparams["gain_nontarget"])
+                    sig = torch.nn.functional.pad(sig, [frame_delay, 0])
+                sig = torch.nn.functional.pad(sig, [0, max_length - len(sig)])
+                mixed_sig += sig
+        yield mixed_sig
 
         # Enrollment signal
         sample_rate = torchaudio.info(enroll_wav).sample_rate
         enroll_sig = sb.dataio.dataio.read_audio(enroll_wav)
-        resampled_enroll_sig = torchaudio.transforms.Resample(
-            sample_rate, hparams["sample_rate"],
-        )(enroll_sig)
-        yield resampled_enroll_sig
+        enroll_sig = torchaudio.functional.resample(
+            enroll_sig, sample_rate, hparams["sample_rate"],
+        )
+        # Trim enrollment signal if too long
+        enroll_sig = enroll_sig[:math.ceil(hparams["max_enroll_length"] * hparams["sample_rate"])]
+        yield enroll_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
 

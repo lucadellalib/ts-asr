@@ -29,6 +29,7 @@ def play_waveform(waveform, sample_rate):
         The sample rate.
 
     """
+    waveform = np.array(waveform)
     if waveform.ndim == 1:
         waveform = waveform[None]
 
@@ -55,6 +56,7 @@ def plot_waveform(waveform, sample_rate, title="Waveform", output_image="wavefor
         logging.warning("This function requires Matplotlib (`pip install matplotlib`)")
         return
 
+    waveform = np.array(waveform)
     if waveform.ndim == 1:
         waveform = waveform[None]
 
@@ -97,6 +99,7 @@ def plot_spectrogram(
         logging.warning("This function requires Matplotlib (`pip install matplotlib`)")
         return
 
+    waveform = np.array(waveform)
     if waveform.ndim == 1:
         waveform = waveform[None]
 
