@@ -444,6 +444,10 @@ if __name__ == "__main__":
     # Create the datasets objects as well as tokenization and encoding
     train_data, valid_data, _ = dataio_prepare(hparams, tokenizer)
 
+    # Pretrain the specified modules
+    run_on_main(hparams["pretrainer"].collect_files)
+    run_on_main(hparams["pretrainer"].load_collected)
+
     # Download the pretrained speaker encoder
     speaker_encoder = AutoModelForAudioXVector.from_pretrained(
         hparams["speaker_encoder_path"]

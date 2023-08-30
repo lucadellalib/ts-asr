@@ -385,6 +385,10 @@ if __name__ == "__main__":
     # Create the datasets objects as well as tokenization and encoding
     train_data, valid_data, test_data = dataio_prepare(hparams, tokenizer)
 
+    # Pretrain the specified modules
+    run_on_main(hparams["pretrainer"].collect_files)
+    run_on_main(hparams["pretrainer"].load_collected)
+
     # Trainer initialization
     brain = ASR(
         modules=hparams["modules"],

@@ -100,16 +100,19 @@ decoder_num_layers: 1
 
 joint_dim: 640
 
-# WavLM for speaker verification fine-tuned on LibriSpeech-960h (see https://huggingface.co/microsoft/wavlm-base-sv)
-speaker_encoder_path: resources/microsoft/wavlm-base-sv  # Must be compatible with Hugging Face AutoModelForAudioXVector
-speaker_embedding_dim: 512  # Must match the speaker encoder's embedding size
-
 # Decoding parameters
 valid_search_freq: 5
 beam_size: 4
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
 expand_beam: 2.3
+
+# Pretrained model (e.g. on LibriSpeech)
+model_path: null
+
+# WavLM for speaker verification fine-tuned on LibriSpeech-960h (see https://huggingface.co/microsoft/wavlm-base-sv)
+speaker_encoder_path: resources/microsoft/wavlm-base-sv  # Must be compatible with Hugging Face AutoModelForAudioXVector
+speaker_embedding_dim: 512  # Must match the speaker encoder's embedding size
 
 # Modules
 feature_extractor: !new:speechbrain.lobes.features.Fbank
@@ -286,3 +289,13 @@ checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
 
 train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
     save_file: !ref <output_folder>/train_log.txt
+
+# Pretrainer
+pretrainer: !new:speechbrain.utils.parameter_transfer.Pretrainer
+    collect_in: !ref <save_folder>
+    loadables:
+        model: !ref <model>
+    paths:
+        model: !ref <model_path>
+    conditions:
+        model: !ref <model_path>
