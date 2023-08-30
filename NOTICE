@@ -1,8 +1,8 @@
 This project incorporates components from the projects listed below. The original copyright notices are set forth below.
 
 #############################################################################################################################################################
-1. Code in {librispeech_prepare, models/{s4, transformer}, train_{librispeech, librispeechmix}}.py,
-           hparams/{LibriSpeech, LibriSpeechMix}/{conformer-t, rnn-t, s4-t}.yaml adapted from:
+1. Code in {librispeech_prepare, models/{s4, transformer}, train_{librispeech, librispeechmix, librispeechmix_scratch}}.py,
+           hparams/{LibriSpeech, LibriSpeechMix}/{conformer-t, conformer-t-scratch, s4-t}.yaml adapted from:
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/librispeech_prepare.py
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/speechbrain/lobes/models/transformer/TransformerASR.py
    https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
