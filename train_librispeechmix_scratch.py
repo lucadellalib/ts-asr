@@ -337,7 +337,7 @@ def dataio_prepare(hparams, tokenizer):
             for i, (sig, frame_delay) in enumerate(zip(sigs, frame_delays)):
                 if i != target_speaker_index:
                     sig = torchaudio.functional.gain(sig, hparams["gain_nontarget"])
-                    sig = torch.nn.functional.pad(sig, [frame_delay, 0])
+                sig = torch.nn.functional.pad(sig, [frame_delay, 0])
                 sig = torch.nn.functional.pad(sig, [0, max_length - len(sig)])
                 mixed_sig += sig
         yield mixed_sig
