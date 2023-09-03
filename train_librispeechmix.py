@@ -334,7 +334,10 @@ def dataio_prepare(hparams, tokenizer):
                     sig, sample_rate, hparams["sample_rate"],
                 )
                 sigs.append(sig)
-            frame_delays = [math.ceil(d * hparams["sample_rate"]) for d in delays]
+            if hparams["suppress_delay"]:
+                frame_delays = [0 for _ in delays]
+            else:
+                frame_delays = [math.ceil(d * hparams["sample_rate"]) for d in delays]
             max_length = max([len(x) + d for x, d in zip(sigs, frame_delays)])
             mixed_sig = torch.zeros(max_length)
             for i, (sig, frame_delay) in enumerate(zip(sigs, frame_delays)):

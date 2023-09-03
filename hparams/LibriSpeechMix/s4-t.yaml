@@ -40,6 +40,7 @@ test_remove_if_longer: 60.0
 max_enroll_length: 40.0  # Must be at least 0.325, the minimum allowed by WavLM
 sample_rate: 16000
 gain_nontarget: 0  # eg. -15 dB (< 0 => larger target speaker SIR)
+suppress_delay: False  # Set delay to 0 to maximize overlap
 sorting: ascending
 
 # Features

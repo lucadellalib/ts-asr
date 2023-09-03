@@ -78,19 +78,16 @@ class LibriSpeechMix(Dataset):
             sig = sig[0]
             sigs.append(sig)
 
-        frame_delays = [math.ceil(d * sample_rate) for d in datum["delays"]]
-        max_length = max(
-            [
-                len(x) + (d if self.suppress_delay else 0)
-                for x, d in zip(sigs, frame_delays)
-            ]
-        )
+        if self.suppress_delay:
+            frame_delays = [0 for _ in datum["delays"]]
+        else:
+            frame_delays = [math.ceil(d * sample_rate) for d in datum["delays"]]
+        max_length = max([len(x) + d for x, d in zip(sigs, frame_delays)])
         mixed_sig = torch.zeros(max_length)
         for i, (sig, frame_delay) in enumerate(zip(sigs, frame_delays)):
             if i != datum["target_speaker_idx"]:
                 sig = torchaudio.functional.gain(sig, self.gain_nontarget)
-            if not self.suppress_delay:
-                sig = torch.nn.functional.pad(sig, [frame_delay, 0])
+            sig = torch.nn.functional.pad(sig, [frame_delay, 0])
             sig = torch.nn.functional.pad(sig, [0, max_length - len(sig)])
             mixed_sig += sig
 
