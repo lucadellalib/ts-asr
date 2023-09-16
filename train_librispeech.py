@@ -121,71 +121,6 @@ class ASR(sb.Brain):
 
         return loss
 
-    def fit_batch(self, batch):
-        """Fit one batch, override to do multiple updates."""
-        should_step = (self.valid_step + 1) % self.grad_accumulation_factor == 0
-
-        # should_step=True => synchronize gradient between DDP processes
-        with self.no_sync(not should_step):
-            with torch.autocast(
-                device_type=torch.device(self.device).type,
-                dtype=torch.bfloat16 if self.bfloat16_mix_prec else torch.float16,
-                enabled=self.auto_mix_prec,
-            ):
-                outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-
-            # Losses are excluded from mixed precision to avoid instabilities
-            loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
-
-            self.check_gradients(loss)
-
-            if self.auto_mix_prec:
-                self.scaler.scale(loss / self.grad_accumulation_factor).backward()
-            else:
-                (loss / self.grad_accumulation_factor).backward()
-
-            if should_step:
-                if self.auto_mix_prec:
-                    self.scaler.unscale_(self.optimizer)
-                if self.max_grad_norm > 0.0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.modules.parameters(), self.max_grad_norm
-                    )
-                if self.auto_mix_prec:
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    self.optimizer.step()
-                self.zero_grad(set_to_none=True)
-                self.optimizer_step += 1
-            self.valid_step += 1
-
-        self.on_fit_batch_end(batch, outputs, loss, should_step)
-        return loss.detach().cpu()
-
-    def check_gradients(self, loss):
-        if loss.isfinite():
-            return True
-
-        self.nonfinite_count += 1
-
-        # Print helpful debug info
-        sb.core.logger.warning(f"Loss is {loss}.")
-        for p in self.modules.parameters():
-            if not torch.isfinite(p).all():
-                sb.core.logger.warning("Parameter is not finite: " + str(p))
-
-        # Check if patience is exhausted
-        if self.nonfinite_count > self.nonfinite_patience:
-            raise ValueError(
-                "Loss is not finite and patience is exhausted. "
-                "To debug, wrap `fit()` with "
-                "autograd's `detect_anomaly()`, e.g.\n\nwith "
-                "torch.autograd.detect_anomaly():\n\tbrain.fit(...)"
-            )
-        sb.core.logger.warning("Patience not yet exhausted, ignoring this batch.")
-        return False
-
     def on_fit_batch_end(self, batch, outputs, loss, should_step):
         """Called after ``fit_batch()``, meant for calculating and logging metrics."""
         if self.hparams.enable_scheduler and should_step:
@@ -249,14 +184,14 @@ def dataio_prepare(hparams, tokenizer):
     )
 
     if hparams["sorting"] == "ascending":
-        # Sort training data to speed up training and get better results
+        # Sort training data to speed up training
         train_data = train_data.filtered_sorted(
             sort_key="duration",
             key_max_value={"duration": hparams["train_remove_if_longer"]},
         )
 
     elif hparams["sorting"] == "descending":
-        # Sort training data to speed up training and get better results
+        # Sort training data to speed up training
         train_data = train_data.filtered_sorted(
             sort_key="duration",
             reverse=True,
@@ -272,14 +207,14 @@ def dataio_prepare(hparams, tokenizer):
     valid_data = sb.dataio.dataset.DynamicItemDataset.from_csv(
         csv_path=hparams["valid_csv"], replacements={"DATA_ROOT": data_folder},
     )
-    # Sort the validation data so it is faster to validate
+    # Sort validation data to speed up validation
     valid_data = valid_data.filtered_sorted(
         sort_key="duration",
         reverse=True,
         key_max_value={"duration": hparams["valid_remove_if_longer"]},
     )
 
-    # Sort the test data so it is faster to test
+    # Sort the test data to speed up testing
     test_data = {}
     for split, test_csv in zip(hparams["test_splits"], hparams["test_csv"]):
         test_data[split] = sb.dataio.dataset.DynamicItemDataset.from_csv(
@@ -295,13 +230,18 @@ def dataio_prepare(hparams, tokenizer):
 
     # 2. Define audio pipeline
     @sb.utils.data_pipeline.takes("wav")
-    @sb.utils.data_pipeline.provides("sig")
+    @sb.utils.data_pipeline.provides("sig", "duration")
     def audio_pipeline(wav):
         # Signal
-        sample_rate = torchaudio.info(wav).sample_rate
-        sig = sb.dataio.dataio.read_audio(wav)
-        sig = torchaudio.functional.resample(sig, sample_rate, hparams["sample_rate"],)
-        return sig
+        sig, sample_rate = torchaudio.load(wav)
+        sig = torchaudio.functional.resample(
+            sig[0], sample_rate, hparams["sample_rate"]
+        )
+        yield sig
+
+        # Duration
+        duration = len(sig) / hparams["sample_rate"]
+        yield duration
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
 
@@ -330,7 +270,8 @@ def dataio_prepare(hparams, tokenizer):
 
     # 4. Set output
     sb.dataio.dataset.set_output_keys(
-        datasets, ["id", "sig", "tokens_bos", "tokens_eos", "tokens", "target_words",],
+        datasets,
+        ["id", "sig", "duration", "tokens_bos", "tokens_eos", "tokens", "target_words"],
     )
 
     return train_data, valid_data, test_data
@@ -370,7 +311,9 @@ if __name__ == "__main__":
         },
     )
 
-    # Define tokenizer and loading it
+    # Define tokenizer
+    # NOTE: the token distribution of the train set might differ from that of the dev/test
+    # set (in this case you should fit the tokenizer on both train, dev, and test)
     tokenizer = SentencePiece(
         model_dir=hparams["save_folder"],
         vocab_size=hparams["vocab_size"],
@@ -402,9 +345,9 @@ if __name__ == "__main__":
     brain.tokenizer = tokenizer
 
     # Dynamic batching
-    hparams["train_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
-    if hparams["dynamic_batching"]:
-        hparams["train_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+    hparams["train_dataloader_kwargs"] = {
+        "num_workers": hparams["dataloader_workers"],
+        "batch_sampler": DynamicBatchSampler(
             train_data,
             hparams["train_max_batch_length"],
             num_buckets=hparams["num_buckets"],
@@ -412,13 +355,12 @@ if __name__ == "__main__":
             shuffle=False,
             batch_ordering=hparams["sorting"],
             max_batch_ex=hparams["max_batch_size"],
-        )
-    else:
-        hparams["train_dataloader_kwargs"]["batch_size"] = hparams["train_batch_size"]
+        ),
+    }
 
-    hparams["valid_dataloader_kwargs"] = {"num_workers": hparams["dataloader_workers"]}
-    if hparams["dynamic_batching"]:
-        hparams["valid_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+    hparams["valid_dataloader_kwargs"] = {
+        "num_workers": hparams["dataloader_workers"],
+        "batch_sampler": DynamicBatchSampler(
             valid_data,
             hparams["valid_max_batch_length"],
             num_buckets=hparams["num_buckets"],
@@ -426,9 +368,8 @@ if __name__ == "__main__":
             shuffle=False,
             batch_ordering="descending",
             max_batch_ex=hparams["max_batch_size"],
-        )
-    else:
-        hparams["valid_dataloader_kwargs"]["batch_size"] = hparams["valid_batch_size"]
+        ),
+    }
 
     # Train
     brain.fit(
@@ -442,10 +383,8 @@ if __name__ == "__main__":
     # Test on each split separately
     for split in test_data:
         hparams["test_dataloader_kwargs"] = {
-            "num_workers": hparams["dataloader_workers"]
-        }
-        if hparams["dynamic_batching"]:
-            hparams["test_dataloader_kwargs"]["batch_sampler"] = DynamicBatchSampler(
+            "num_workers": hparams["dataloader_workers"],
+            "batch_sampler": DynamicBatchSampler(
                 test_data[split],
                 hparams["test_max_batch_length"],
                 num_buckets=hparams["num_buckets"],
@@ -453,9 +392,8 @@ if __name__ == "__main__":
                 shuffle=False,
                 batch_ordering="descending",
                 max_batch_ex=hparams["max_batch_size"],
-            )
-        else:
-            hparams["test_dataloader_kwargs"]["batch_size"] = hparams["test_batch_size"]
+            ),
+        }
 
         brain.hparams.wer_file = os.path.join(
             hparams["output_folder"], f"wer_{split}.txt"

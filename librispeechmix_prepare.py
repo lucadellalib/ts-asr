@@ -10,8 +10,6 @@ import os
 from collections import defaultdict
 from typing import Optional, Sequence
 
-import torchaudio
-
 
 __all__ = ["prepare_librispeechmix"]
 
@@ -40,7 +38,11 @@ def prepare_librispeechmix(
     data_folder: "str",
     save_folder: "Optional[str]" = None,
     splits: "Sequence[str]" = _DEFAULT_SPLITS,
-    max_enrolls: "Optional[int]" = None,
+    num_targets: "Optional[int]" = None,
+    num_enrolls: "Optional[int]" = None,
+    trim_nontarget: "Optional[float]" = None,
+    suppress_delay: "Optional[bool]" = None,
+    overlap_ratio: "Optional[float]" = None,
 ) -> "None":
     """Prepare data manifest JSON files for LibriSpeechMix dataset
     (see https://github.com/NaoyukiKanda/LibriSpeechMix).
@@ -48,19 +50,36 @@ def prepare_librispeechmix(
     Arguments
     ---------
     data_folder:
-        The path to the dataset folder.
+        The path to the dataset folder (i.e. a folder containing the standard
+        LibriSpeech folders + the LibriSpeechMix JSONL annotation files).
     save_folder:
-        The path to the folder where the data
-        manifest JSON files will be stored.
+        The path to the folder where the data manifest JSON files will be stored.
         Default to ``data_folder``.
     splits:
         The dataset splits to load.
-        Splits with the same prefix are merged into a single
-        JSON file (e.g. "dev-clean-1mix" and "dev-clean-2mix").
+        Splits with the same prefix are merged into a single JSON file
+        (e.g. "dev-clean-1mix" and "dev-clean-2mix").
         Default to all the available splits.
-    max_enrolls:
+    num_targets:
+        The maximum number of target utterance to extract from each mixture.
+        Default to all the available utterances.
+    num_enrolls:
         The maximum number of enrollment utterances per target speaker.
         Default to all the available enrollment utterances.
+    trim_nontarget:
+        The maximum number of seconds before and after the target utterance.
+        Set to 0 to trim the mixture at the edges of the target utterance.
+        Default to infinity.
+    suppress_delay:
+        True to set all delays to 0 (i.e. maximize the overlap).
+        Must be None if `overlap_ratio` is set.
+        Default to False.
+    overlap_ratio:
+        The overlap ratio for the target utterance.
+        The target utterance delay is always set to 0, which implies
+        that a new mixture is created for each target utterance.
+        Must be None if `suppress_delay` is set.
+        Default the values specifies in the annotation file for each mixture.
 
     Raises
     ------
@@ -81,6 +100,15 @@ def prepare_librispeechmix(
         save_folder = data_folder
     if not splits:
         raise ValueError(f"`splits` ({splits}) must be non-empty")
+    if suppress_delay is not None and overlap_ratio is not None:
+        raise ValueError(
+            f"Either `suppress_delay` or `overlap_ratio` must be set, but not both"
+        )
+    if overlap_ratio is not None:
+        if overlap_ratio < 0.0 or overlap_ratio > 1.0:
+            raise ValueError(
+                f"`overlap_ratio` ({overlap_ratio}) must be in the interval [0, 1]"
+            )
 
     # Grouping
     groups = defaultdict(list)
@@ -107,46 +135,62 @@ def prepare_librispeechmix(
             _LOGGER.info(f"Split: {split}")
 
             # Read input JSONL
-            input_jsonl = os.path.join(data_folder, "list", f"{split}.jsonl")
+            input_jsonl = os.path.join(data_folder, f"{split}.jsonl")
             if not os.path.exists(input_jsonl):
-                raise RuntimeError(
-                    f'"{input_jsonl}" not found. Download the data generation '
-                    f"scripts from https://github.com/NaoyukiKanda/LibriSpeechMix "
-                    f"and follow the readme to generate the data"
-                )
+                raise RuntimeError(f'"{input_jsonl}" not found')
             with open(input_jsonl, "r", encoding="utf-8") as fr:
                 for input_line in fr:
                     input_entry = json.loads(input_line)
                     ID = input_entry["id"]
-                    mixed_wav = input_entry["mixed_wav"]
-                    texts = input_entry["texts"]
+                    texts = input_entry["texts"][:num_targets]
                     speaker_profile = input_entry["speaker_profile"]
-                    speaker_profile_index = input_entry["speaker_profile_index"]
+                    speaker_profile_index = input_entry["speaker_profile_index"][
+                        :num_targets
+                    ]
                     wavs = input_entry["wavs"]
                     delays = input_entry["delays"]
+                    durations = input_entry["durations"]
                     # speakers = input_entry["speakers"]
-                    # durations = input_entry["durations"]
                     # genders = input_entry["genders"]
 
-                    info = torchaudio.info(os.path.join(data_folder, "data", mixed_wav))
-                    duration = info.num_frames / info.sample_rate
+                    wavs = [os.path.join("{DATA_ROOT}", wav) for wav in wavs]
+                    for target_speaker_idx, (text, idx) in enumerate(
+                        zip(texts, speaker_profile_index)
+                    ):
+                        ID_text = f"{ID}_text-{target_speaker_idx}"
 
-                    mixed_wav = os.path.join("{DATA_ROOT}", "data", mixed_wav)
-                    wavs = [os.path.join("{DATA_ROOT}", "data", wav) for wav in wavs]
-                    for i, (text, idx) in enumerate(zip(texts, speaker_profile_index)):
-                        ID_text = f"{ID}_text-{i}"
+                        if suppress_delay:
+                            delays = [0.0 for _ in delays]
+
+                        if overlap_ratio is not None:
+                            target_duration = durations[target_speaker_idx]
+                            overlap_start = (1 - overlap_ratio) * target_duration
+                            delays = [overlap_start] * len(wavs)
+                            delays[target_speaker_idx] = 0
+
+                        start = 0.0
+                        duration = max_duration = max(
+                            [d + x for d, x in zip(delays, durations)]
+                        )
+                        if trim_nontarget is not None:
+                            start = delays[target_speaker_idx]
+                            duration = durations[target_speaker_idx]
+                            new_start = max(0.0, start - trim_nontarget)
+                            duration += start - new_start
+                            duration = min(duration + trim_nontarget, max_duration)
+
                         enroll_wavs = speaker_profile[idx]
-                        for enroll_wav in enroll_wavs[:max_enrolls]:
+                        for enroll_wav in enroll_wavs[:num_enrolls]:
                             ID_enroll = f"{ID_text}_{enroll_wav}"
                             enroll_wav = os.path.join("{DATA_ROOT}", "data", enroll_wav)
                             output_entry = {
-                                "mixed_wav": mixed_wav,
-                                "enroll_wav": enroll_wav,
-                                "wrd": text,
-                                "duration": duration,
                                 "wavs": wavs,
+                                "enroll_wav": enroll_wav,
                                 "delays": delays,
-                                "target_speaker_index": i,
+                                "start": start,
+                                "duration": duration,
+                                "target_speaker_idx": target_speaker_idx,
+                                "wrd": text,
                             }
                             output_entries[ID_enroll] = output_entry
 

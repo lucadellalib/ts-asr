@@ -1,4 +1,4 @@
-"""Transformer model.
+"""Transformer encoder model.
 
 Authors
 * Luca Della Libera 2023
@@ -21,11 +21,11 @@ from speechbrain.nnet.linear import Linear
 from torch import nn
 
 
-__all__ = ["Transformer"]
+__all__ = ["TransformerEncoder"]
 
 
-class Transformer(TransformerInterface):
-    """Transformer model.
+class TransformerEncoder(TransformerInterface):
+    """Transformer encoder model.
 
     Arguments
     ---------
@@ -35,7 +35,7 @@ class Transformer(TransformerInterface):
         Embedding dimension size.
     nhead : int, optional
         The number of heads in the multi-head attention models.
-    num_encoder_layers : int, optional
+    num_layers : int, optional
         The number of encoder layers.
     d_ffn : int, optional
         The dimension of the feed forward network model.
@@ -88,7 +88,7 @@ class Transformer(TransformerInterface):
     >>> seq_length = 256
     >>> input_size = 80
     >>> d_model = 512
-    >>> model = Transformer(input_size, d_model)
+    >>> model = TransformerEncoder(input_size, d_model)
     >>> src = torch.randn(batch_size, seq_length, input_size)
     >>> speaker_embs = torch.randn(batch_size, 1, d_model)
     >>> out = model(src, speaker_embs=speaker_embs)
@@ -100,7 +100,7 @@ class Transformer(TransformerInterface):
         input_size,
         d_model=512,
         nhead=8,
-        num_encoder_layers=6,
+        num_layers=6,
         d_ffn=2048,
         dropout=0.1,
         activation=nn.ReLU,
@@ -122,7 +122,7 @@ class Transformer(TransformerInterface):
         super().__init__(
             d_model=d_model,
             nhead=nhead,
-            num_encoder_layers=num_encoder_layers,
+            num_encoder_layers=num_layers,
             num_decoder_layers=0,
             d_ffn=d_ffn,
             dropout=dropout,
@@ -193,7 +193,9 @@ class Transformer(TransformerInterface):
             elif self.injection_mode == "prod":
                 src *= speaker_embs
             elif self.injection_mode == "cat":
-                src = torch.cat([src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1)
+                src = torch.cat(
+                    [src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1
+                )
                 src = self.cat_proj(src)
             else:
                 raise NotImplementedError
@@ -240,7 +242,7 @@ if __name__ == "__main__":
     seq_length = 256
     input_size = 80
     d_model = 512
-    model = Transformer(input_size, d_model)
+    model = TransformerEncoder(input_size, d_model)
     src = torch.randn(batch_size, seq_length, input_size)
     speaker_embs = torch.randn(batch_size, 1, d_model)
     out = model(src, speaker_embs=speaker_embs)

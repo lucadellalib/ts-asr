@@ -25,6 +25,8 @@ import torchaudio
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.dataio.dataio import length_to_mask
 from speechbrain.dataio.sampler import DynamicBatchSampler
+from speechbrain.nnet.containers import Sequential
+from speechbrain.nnet.linear import Linear
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import if_main_process, run_on_main
 
@@ -69,7 +71,18 @@ class TSASR(sb.Brain):
 
         # Forward decoder/predictor
         embs = self.modules.embedding(tokens_bos)
-        dec_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens)
+        if self.hparams.decoder_biasing:
+            dec_hidden = self.modules.decoder_hidden_proj(speaker_embs)
+            dec_hidden = dec_hidden.reshape(
+                -1, 2, self.hparams.decoder_num_layers, self.hparams.decoder_neurons
+            )
+            dec_hidden = (
+                dec_hidden[:, 0].movedim(0, 1),
+                dec_hidden[:, 1].movedim(0, 1),
+            )
+        else:
+            dec_hidden = None
+        dec_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens, hx=dec_hidden)
         dec_out = self.modules.decoder_proj(dec_out)
 
         # Forward joiner
@@ -83,6 +96,7 @@ class TSASR(sb.Brain):
         # Compute outputs
         ctc_logprobs = None
         ce_logprobs = None
+        speaker_embs_rec = None
         hyps = None
 
         if stage == sb.Stage.TRAIN:
@@ -96,6 +110,21 @@ class TSASR(sb.Brain):
                 ce_logits = self.modules.decoder_head(dec_out)
                 ce_logprobs = ce_logits.log_softmax(dim=-1)
 
+            if current_epoch <= self.hparams.num_speaker_embedding_rec_epochs:
+                # Output layer for speaker embedding reconstruction
+                speaker_embs_rec = self.modules.speaker_embedding_rec_proj(enc_out)
+                speaker_embs_mask = length_to_mask(
+                    (enroll_wavs_lens * speaker_embs_rec.shape[-2])
+                    .ceil()
+                    .clamp(max=speaker_embs_rec.shape[-2])
+                    .int()
+                )[
+                    ..., None
+                ]  # False for masked tokens
+                speaker_embs_rec = (speaker_embs_rec * speaker_embs_mask).sum(
+                    dim=-2, keepdims=True
+                ) / speaker_embs_mask.sum(dim=-2, keepdims=True)
+
         elif stage == sb.Stage.VALID:
             # During validation, run decoding only every valid_search_freq epochs to speed up training
             if current_epoch % self.hparams.valid_search_freq == 0:
@@ -104,11 +133,18 @@ class TSASR(sb.Brain):
         else:
             hyps, scores, _, _ = self.hparams.beam_searcher(enc_out)
 
-        return logits, ctc_logprobs, ce_logprobs, hyps
+        return logits, ctc_logprobs, ce_logprobs, speaker_embs_rec, speaker_embs, hyps
 
     def compute_objectives(self, predictions, batch, stage):
         """Computes the transducer loss + (CTC + CE) given predictions and targets."""
-        logits, ctc_logprobs, ce_logprobs, hyps = predictions
+        (
+            logits,
+            ctc_logprobs,
+            ce_logprobs,
+            speaker_embs_rec,
+            speaker_embs,
+            hyps,
+        ) = predictions
 
         ids = batch.id
         _, mixed_wavs_lens = batch.mixed_sig
@@ -126,6 +162,11 @@ class TSASR(sb.Brain):
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
                 ce_logprobs, tokens_eos, length=tokens_eos_lens
             )
+        if speaker_embs_rec is not None:
+            loss += (
+                self.hparams.speaker_embedding_rec_weight
+                * torch.nn.functional.mse_loss(speaker_embs_rec, speaker_embs)
+            )
 
         if hyps is not None:
             target_words = batch.target_words
@@ -137,71 +178,6 @@ class TSASR(sb.Brain):
             self.wer_metric.append(ids, predicted_words, target_words)
 
         return loss
-
-    def fit_batch(self, batch):
-        """Fit one batch, override to do multiple updates."""
-        should_step = (self.valid_step + 1) % self.grad_accumulation_factor == 0
-
-        # should_step=True => synchronize gradient between DDP processes
-        with self.no_sync(not should_step):
-            with torch.autocast(
-                device_type=torch.device(self.device).type,
-                dtype=torch.bfloat16 if self.bfloat16_mix_prec else torch.float16,
-                enabled=self.auto_mix_prec,
-            ):
-                outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-
-            # Losses are excluded from mixed precision to avoid instabilities
-            loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
-
-            self.check_gradients(loss)
-
-            if self.auto_mix_prec:
-                self.scaler.scale(loss / self.grad_accumulation_factor).backward()
-            else:
-                (loss / self.grad_accumulation_factor).backward()
-
-            if should_step:
-                if self.auto_mix_prec:
-                    self.scaler.unscale_(self.optimizer)
-                if self.max_grad_norm > 0.0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.modules.parameters(), self.max_grad_norm
-                    )
-                if self.auto_mix_prec:
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    self.optimizer.step()
-                self.zero_grad(set_to_none=True)
-                self.optimizer_step += 1
-            self.valid_step += 1
-
-        self.on_fit_batch_end(batch, outputs, loss, should_step)
-        return loss.detach().cpu()
-
-    def check_gradients(self, loss):
-        if loss.isfinite():
-            return True
-
-        self.nonfinite_count += 1
-
-        # Print helpful debug info
-        sb.core.logger.warning(f"Loss is {loss}.")
-        for p in self.modules.parameters():
-            if not torch.isfinite(p).all():
-                sb.core.logger.warning("Parameter is not finite: " + str(p))
-
-        # Check if patience is exhausted
-        if self.nonfinite_count > self.nonfinite_patience:
-            raise ValueError(
-                "Loss is not finite and patience is exhausted. "
-                "To debug, wrap `fit()` with "
-                "autograd's `detect_anomaly()`, e.g.\n\nwith "
-                "torch.autograd.detect_anomaly():\n\tbrain.fit(...)"
-            )
-        sb.core.logger.warning("Patience not yet exhausted, ignoring this batch.")
-        return False
 
     def on_fit_batch_end(self, batch, outputs, loss, should_step):
         """Called after ``fit_batch()``, meant for calculating and logging metrics."""
@@ -266,14 +242,14 @@ def dataio_prepare(hparams, tokenizer):
     )
 
     if hparams["sorting"] == "ascending":
-        # Sort training data to speed up training and get better results
+        # Sort training data to speed up training
         train_data = train_data.filtered_sorted(
             sort_key="duration",
             key_max_value={"duration": hparams["train_remove_if_longer"]},
         )
 
     elif hparams["sorting"] == "descending":
-        # Sort training data to speed up training and get better results
+        # Sort training data to speed up training
         train_data = train_data.filtered_sorted(
             sort_key="duration",
             reverse=True,
@@ -289,7 +265,7 @@ def dataio_prepare(hparams, tokenizer):
     valid_data = sb.dataio.dataset.DynamicItemDataset.from_json(
         json_path=hparams["valid_json"], replacements={"DATA_ROOT": data_folder},
     )
-    # Sort the validation data so it is faster to validate
+    # Sort validation data to speed up validation
     valid_data = valid_data.filtered_sorted(
         sort_key="duration",
         reverse=True,
@@ -299,7 +275,7 @@ def dataio_prepare(hparams, tokenizer):
     test_data = sb.dataio.dataset.DynamicItemDataset.from_json(
         json_path=hparams["test_json"], replacements={"DATA_ROOT": data_folder},
     )
-    # Sort the test data so it is faster to test
+    # Sort the test data to speed up testing
     test_data = test_data.filtered_sorted(
         sort_key="duration",
         reverse=True,
@@ -310,46 +286,47 @@ def dataio_prepare(hparams, tokenizer):
 
     # 2. Define audio pipeline
     @sb.utils.data_pipeline.takes(
-        "mixed_wav", "enroll_wav", "delays", "wavs", "target_speaker_index"
+        "wavs", "enroll_wav", "delays", "start", "duration", "target_speaker_idx"
     )
-    @sb.utils.data_pipeline.provides("mixed_sig", "enroll_sig")
-    def audio_pipeline(mixed_wav, enroll_wav, delays, wavs, target_speaker_index):
+    @sb.utils.data_pipeline.provides("mixed_sig", "target_sig", "enroll_sig")
+    def audio_pipeline(wavs, enroll_wav, delays, start, duration, target_speaker_idx):
         # Mixed signal
-        if hparams["gain_nontarget"] == 0:
-            sample_rate = torchaudio.info(mixed_wav).sample_rate
-            mixed_sig = sb.dataio.dataio.read_audio(mixed_wav)
-            mixed_sig = torchaudio.functional.resample(
-                mixed_sig, sample_rate, hparams["sample_rate"],
+        sigs = []
+        for i, (wav, delay) in enumerate(zip(wavs, delays)):
+            try:
+                sig, sample_rate = torchaudio.load(wav)
+            except RuntimeError:
+                sig, sample_rate = torchaudio.load(wav.replace(".wav", ".flac"))
+            sig = torchaudio.functional.resample(
+                sig[0], sample_rate, hparams["sample_rate"],
             )
-        else:
-            # Dynamic mixing with gain
-            sigs = []
-            for wav in wavs:
-                sample_rate = torchaudio.info(wav).sample_rate
-                sig = sb.dataio.dataio.read_audio(wav)
-                sig = torchaudio.functional.resample(
-                    sig, sample_rate, hparams["sample_rate"],
-                )
-                sigs.append(sig)
-            if hparams["suppress_delay"]:
-                frame_delays = [0 for _ in delays]
-            else:
-                frame_delays = [math.ceil(d * hparams["sample_rate"]) for d in delays]
-            max_length = max([len(x) + d for x, d in zip(sigs, frame_delays)])
-            mixed_sig = torch.zeros(max_length)
-            for i, (sig, frame_delay) in enumerate(zip(sigs, frame_delays)):
-                if i != target_speaker_index:
-                    sig = torchaudio.functional.gain(sig, hparams["gain_nontarget"])
-                sig = torch.nn.functional.pad(sig, [frame_delay, 0])
-                sig = torch.nn.functional.pad(sig, [0, max_length - len(sig)])
-                mixed_sig += sig
+            if i != target_speaker_idx:
+                sig = torchaudio.functional.gain(sig, hparams["gain_nontarget"])
+            frame_delay = math.ceil(delay * hparams["sample_rate"])
+            sig = torch.nn.functional.pad(sig, [frame_delay, 0])
+            sigs.append(sig)
+        max_length = max(len(x) for x in sigs)
+        sigs = [torch.nn.functional.pad(x, [0, max_length - len(x)]) for x in sigs]
+        mixed_sig = sigs[0].clone()
+        for sig in sigs[1:]:
+            mixed_sig += sig
+        frame_start = math.ceil(start * hparams["sample_rate"])
+        frame_duration = math.ceil(duration * hparams["sample_rate"])
+        mixed_sig = mixed_sig[frame_start : frame_start + frame_duration]
         yield mixed_sig
 
+        # Target signal
+        yield sigs[target_speaker_idx][frame_start : frame_start + frame_duration]
+
         # Enrollment signal
-        sample_rate = torchaudio.info(enroll_wav).sample_rate
-        enroll_sig = sb.dataio.dataio.read_audio(enroll_wav)
+        try:
+            enroll_sig, sample_rate = torchaudio.load(enroll_wav)
+        except RuntimeError:
+            enroll_sig, sample_rate = torchaudio.load(
+                enroll_wav.replace(".wav", ".flac")
+            )
         enroll_sig = torchaudio.functional.resample(
-            enroll_sig, sample_rate, hparams["sample_rate"],
+            enroll_sig[0], sample_rate, hparams["sample_rate"],
         )
         # Trim enrollment signal if too long
         enroll_sig = enroll_sig[
@@ -388,6 +365,7 @@ def dataio_prepare(hparams, tokenizer):
         [
             "id",
             "mixed_sig",
+            "target_sig",
             "enroll_sig",
             "tokens_bos",
             "tokens_eos",
@@ -425,11 +403,17 @@ if __name__ == "__main__":
             "data_folder": hparams["data_folder"],
             "save_folder": hparams["save_folder"],
             "splits": hparams["splits"],
-            "max_enrolls": hparams["max_enrolls"],
+            "num_targets": hparams["num_targets"],
+            "num_enrolls": hparams["num_enrolls"],
+            "trim_nontarget": hparams["trim_nontarget"],
+            "suppress_delay": hparams["suppress_delay"],
+            "overlap_ratio": hparams["overlap_ratio"],
         },
     )
 
-    # Define tokenizer and loading it
+    # Define tokenizer
+    # NOTE: the token distribution of the train set might differ from that of the dev/test
+    # set (in this case you should fit the tokenizer on both train, dev, and test)
     tokenizer = SentencePiece(
         model_dir=hparams["save_folder"],
         vocab_size=hparams["vocab_size"],
@@ -447,6 +431,35 @@ if __name__ == "__main__":
     # Pretrain the specified modules
     run_on_main(hparams["pretrainer"].collect_files)
     run_on_main(hparams["pretrainer"].load_collected)
+
+    # Log number of parameters in the speaker encoder
+    sb.core.logger.info(
+        f"{round(sum([x.numel() for x in hparams['speaker_encoder'].parameters()]) / 1e6)}M parameters in speaker encoder"
+    )
+
+    # Add modules for additional biasing/losses
+    if hparams["decoder_biasing"]:
+        decoder_hidden_proj = Linear(
+            input_size=hparams["d_model"],
+            n_neurons=2 * hparams["decoder_neurons"] * hparams["decoder_num_layers"],
+        )
+        hparams["modules"]["decoder_hidden_proj"] = decoder_hidden_proj
+        hparams["model"].append(decoder_hidden_proj)
+        hparams["checkpointer"].add_recoverable(
+            "decoder_hidden_proj", decoder_hidden_proj
+        )
+
+    if hparams["num_speaker_embedding_rec_epochs"] > 0:
+        speaker_embedding_rec_proj = Sequential(
+            Linear(input_size=hparams["joint_dim"], n_neurons=100),
+            torch.nn.ReLU(),
+            Linear(input_size=100, n_neurons=hparams["d_model"]),
+        )
+        hparams["modules"]["speaker_embedding_rec_proj"] = speaker_embedding_rec_proj
+        hparams["model"].append(speaker_embedding_rec_proj)
+        hparams["checkpointer"].add_recoverable(
+            "speaker_embedding_rec_proj", speaker_embedding_rec_proj
+        )
 
     # Trainer initialization
     brain = TSASR(
@@ -507,13 +520,18 @@ if __name__ == "__main__":
                 "data_folder": hparams["data_folder"],
                 "save_folder": hparams["save_folder"],
                 "splits": [split],
-                "max_enrolls": hparams["max_enrolls"],
+                "num_targets": hparams["num_targets"],
+                "num_enrolls": hparams["num_enrolls"],
+                "trim_nontarget": hparams["trim_nontarget"],
+                "suppress_delay": hparams["suppress_delay"],
+                "overlap_ratio": hparams["overlap_ratio"],
             },
         )
 
         # Create the datasets objects as well as tokenization and encoding
         _, _, test_data = dataio_prepare(hparams, tokenizer)
 
+        # Dynamic batching
         hparams["test_dataloader_kwargs"] = {
             "num_workers": hparams["dataloader_workers"]
         }
