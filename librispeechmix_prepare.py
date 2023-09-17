@@ -182,7 +182,7 @@ def prepare_librispeechmix(
                         enroll_wavs = speaker_profile[idx]
                         for enroll_wav in enroll_wavs[:num_enrolls]:
                             ID_enroll = f"{ID_text}_{enroll_wav}"
-                            enroll_wav = os.path.join("{DATA_ROOT}", "data", enroll_wav)
+                            enroll_wav = os.path.join("{DATA_ROOT}", enroll_wav)
                             output_entry = {
                                 "wavs": wavs,
                                 "enroll_wav": enroll_wav,

@@ -36,19 +36,19 @@ class TSASR(sb.Brain):
         current_epoch = self.hparams.epoch_counter.current
 
         batch = batch.to(self.device)
-        mixed_wavs, mixed_wavs_lens = batch.mixed_sig
-        enroll_wavs, enroll_wavs_lens = batch.enroll_sig
+        mixed_sigs, mixed_sigs_lens = batch.mixed_sig
+        enroll_sigs, enroll_sigs_lens = batch.enroll_sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Extract speaker embedding
         with torch.no_grad():
             self.modules.speaker_encoder.eval()
             speaker_embs = self.modules.speaker_encoder(
-                input_values=enroll_wavs,
+                input_values=enroll_sigs,
                 attention_mask=length_to_mask(
-                    (enroll_wavs_lens * enroll_wavs.shape[-1])
+                    (enroll_sigs_lens * enroll_sigs.shape[-1])
                     .ceil()
-                    .clamp(max=enroll_wavs.shape[-1])
+                    .clamp(max=enroll_sigs.shape[-1])
                     .int()
                 ).long(),  # 0 for masked tokens
                 output_attentions=False,
@@ -59,11 +59,11 @@ class TSASR(sb.Brain):
         # Add speed perturbation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "speed_perturb" in self.modules:
-                mixed_wavs = self.modules.speed_perturb(mixed_wavs)
+                mixed_sigs = self.modules.speed_perturb(mixed_sigs)
 
         # Extract features
-        feats = self.modules.feature_extractor(mixed_wavs)
-        feats = self.modules.normalizer(feats, mixed_wavs_lens, epoch=current_epoch)
+        feats = self.modules.feature_extractor(mixed_sigs)
+        feats = self.modules.normalizer(feats, mixed_sigs_lens, epoch=current_epoch)
 
         # Add augmentation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -72,7 +72,7 @@ class TSASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        enc_out = self.modules.encoder(feats, mixed_wavs_lens, speaker_embs)
+        enc_out = self.modules.encoder(feats, mixed_sigs_lens, speaker_embs)
         enc_out = self.modules.encoder_proj(enc_out)
 
         # Forward decoder/predictor
@@ -102,7 +102,9 @@ class TSASR(sb.Brain):
         # Compute outputs
         ctc_logprobs = None
         ce_logprobs = None
-        speaker_embs_rec = None
+        speaker_embs_pred = None
+        target_sigs_pred = None
+        target_sigs = None
         hyps = None
 
         if stage == sb.Stage.TRAIN:
@@ -116,20 +118,44 @@ class TSASR(sb.Brain):
                 ce_logits = self.modules.decoder_head(dec_out)
                 ce_logprobs = ce_logits.log_softmax(dim=-1)
 
-            if current_epoch <= self.hparams.num_speaker_embedding_rec_epochs:
-                # Output layer for speaker embedding reconstruction
-                speaker_embs_rec = self.modules.speaker_embedding_rec_proj(enc_out)
+            if current_epoch <= self.hparams.num_speaker_embedding_pred_epochs:
+                # Output layer for speaker embedding prediction
+                speaker_embs_pred = self.modules.speaker_embedding_pred_proj(enc_out)
                 speaker_embs_mask = length_to_mask(
-                    (enroll_wavs_lens * speaker_embs_rec.shape[-2])
+                    (enroll_sigs_lens * speaker_embs_pred.shape[-2])
                     .ceil()
-                    .clamp(max=speaker_embs_rec.shape[-2])
+                    .clamp(max=speaker_embs_pred.shape[-2])
                     .int()
                 )[
                     ..., None
                 ]  # False for masked tokens
-                speaker_embs_rec = (speaker_embs_rec * speaker_embs_mask).sum(
+                speaker_embs_pred = (speaker_embs_pred * speaker_embs_mask).sum(
                     dim=-2, keepdims=True
                 ) / speaker_embs_mask.sum(dim=-2, keepdims=True)
+
+            if "target_sig_pred_proj" in self.modules:
+                # Target signal prediction
+                target_sigs_pred = self.modules.target_sig_pred_proj(enc_out)
+                target_sigs, target_sigs_lens = batch.target_sig
+                with torch.no_grad():
+                    # Extract features
+                    self.modules.feature_extractor.eval()
+                    self.modules.normalizer.eval()
+                    target_feats = self.modules.feature_extractor(target_sigs)
+                    target_feats = self.modules.normalizer(
+                        target_feats, target_sigs_lens, epoch=current_epoch
+                    )
+
+                    # Forward encoder/transcriber
+                    self.modules.frontend.eval()
+                    self.modules.encoder.eval()
+                    self.modules.encoder_proj.eval()
+                    target_feats = self.modules.frontend(target_feats)
+                    target_enc_out = self.modules.encoder(
+                        target_feats, target_sigs_lens, speaker_embs
+                    )
+                    target_enc_out = self.modules.encoder_proj(target_enc_out)
+                    target_sigs = target_enc_out
 
         elif stage == sb.Stage.VALID:
             # During validation, run decoding only every valid_search_freq epochs to speed up training
@@ -139,7 +165,16 @@ class TSASR(sb.Brain):
         else:
             hyps, scores, _, _ = self.hparams.beam_searcher(enc_out)
 
-        return logits, ctc_logprobs, ce_logprobs, speaker_embs_rec, speaker_embs, hyps
+        return (
+            logits,
+            ctc_logprobs,
+            ce_logprobs,
+            speaker_embs_pred,
+            speaker_embs,
+            target_sigs_pred,
+            target_sigs,
+            hyps,
+        )
 
     def compute_objectives(self, predictions, batch, stage):
         """Computes the transducer loss + (CTC + CE) given predictions and targets."""
@@ -147,31 +182,38 @@ class TSASR(sb.Brain):
             logits,
             ctc_logprobs,
             ce_logprobs,
-            speaker_embs_rec,
+            speaker_embs_pred,
             speaker_embs,
+            target_sigs_pred,
+            target_sigs,
             hyps,
         ) = predictions
 
         ids = batch.id
-        _, mixed_wavs_lens = batch.mixed_sig
+        _, mixed_sigs_lens = batch.mixed_sig
+        _, enroll_sigs_lens = batch.enroll_sig
+        _, target_sigs_lens = batch.target_sig
         tokens, tokens_lens = batch.tokens
-        tokens_eos, tokens_eos_lens = batch.tokens_eos
 
         loss = self.hparams.transducer_loss(
-            logits, tokens, mixed_wavs_lens, tokens_lens
+            logits, tokens, mixed_sigs_lens, tokens_lens
         )
         if ctc_logprobs is not None:
             loss += self.hparams.ctc_weight * self.hparams.ctc_loss(
-                ctc_logprobs, tokens, mixed_wavs_lens, tokens_lens
+                ctc_logprobs, tokens, mixed_sigs_lens, tokens_lens
             )
         if ce_logprobs is not None:
+            tokens_eos, tokens_eos_lens = batch.tokens_eos
             loss += self.hparams.ce_weight * self.hparams.ce_loss(
                 ce_logprobs, tokens_eos, length=tokens_eos_lens
             )
-        if speaker_embs_rec is not None:
-            loss += (
-                self.hparams.speaker_embedding_rec_weight
-                * torch.nn.functional.mse_loss(speaker_embs_rec, speaker_embs)
+        if speaker_embs_pred is not None:
+            loss += self.hparams.speaker_embedding_pred_weight * self.hparams.mse_loss(
+                speaker_embs_pred, speaker_embs, enroll_sigs_lens
+            )
+        if target_sigs_pred is not None:
+            loss += self.hparams.target_sig_pred_weight * self.hparams.mse_loss(
+                target_sigs_pred, target_sigs, target_sigs_lens
             )
 
         if hyps is not None:
@@ -449,7 +491,7 @@ if __name__ == "__main__":
         f"{round(sum([x.numel() for x in speaker_encoder.parameters()]) / 1e6)}M parameters in frozen speaker encoder"
     )
 
-    # Add modules for additional biasing/losses
+    # Add module for decoder biasing
     if hparams["decoder_biasing"]:
         decoder_hidden_proj = Linear(
             input_size=hparams["d_model"],
@@ -461,16 +503,38 @@ if __name__ == "__main__":
             "decoder_hidden_proj", decoder_hidden_proj
         )
 
-    if hparams["num_speaker_embedding_rec_epochs"] > 0:
-        speaker_embedding_rec_proj = Sequential(
-            Linear(input_size=hparams["joint_dim"], n_neurons=100),
+    # Add module for speaker embedding prediction
+    if hparams["num_speaker_embedding_pred_epochs"] > 0:
+        speaker_embedding_pred_proj = Sequential(
+            Linear(
+                input_size=hparams["joint_dim"], n_neurons=hparams["auxiliary_neurons"]
+            ),
             torch.nn.ReLU(),
-            Linear(input_size=100, n_neurons=hparams["d_model"]),
+            Linear(
+                input_size=hparams["auxiliary_neurons"], n_neurons=hparams["d_model"]
+            ),
         )
-        hparams["modules"]["speaker_embedding_rec_proj"] = speaker_embedding_rec_proj
-        hparams["model"].append(speaker_embedding_rec_proj)
+        hparams["modules"]["speaker_embedding_pred_proj"] = speaker_embedding_pred_proj
+        hparams["model"].append(speaker_embedding_pred_proj)
         hparams["checkpointer"].add_recoverable(
-            "speaker_embedding_rec_proj", speaker_embedding_rec_proj
+            "speaker_embedding_pred_proj", speaker_embedding_pred_proj
+        )
+
+    # Add module for target signal prediction
+    if hparams["target_sig_pred_weight"] > 0:
+        target_sig_pred_proj = Sequential(
+            Linear(
+                input_size=hparams["joint_dim"], n_neurons=hparams["auxiliary_neurons"]
+            ),
+            torch.nn.ReLU(),
+            Linear(
+                input_size=hparams["auxiliary_neurons"], n_neurons=hparams["joint_dim"]
+            ),
+        )
+        hparams["modules"]["target_sig_pred_proj"] = target_sig_pred_proj
+        hparams["model"].append(target_sig_pred_proj)
+        hparams["checkpointer"].add_recoverable(
+            "target_sig_pred_proj", target_sig_pred_proj
         )
 
     # Trainer initialization

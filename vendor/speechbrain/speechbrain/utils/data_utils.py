@@ -371,8 +371,7 @@ def set_writing_permissions(folder_path):
     for root, dirs, files in os.walk(folder_path):
         for file_name in files:
             file_path = os.path.join(root, file_name)
-            # Set writing permissions (mode 0o666) to the file
-            os.chmod(file_path, 0o666)
+            pass
 
 
 def pad_right_to(

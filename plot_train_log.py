@@ -31,9 +31,6 @@ _EXPECTED_METRICS = [
     "valid loss",
     "valid CER",
     "valid WER",
-    "test loss",
-    "test CER",
-    "test WER",
 ]
 
 
@@ -82,7 +79,7 @@ def plot_metrics(
     metrics: "Dict[str, ndarray]",
     output_image: "str",
     title: "str" = "",
-    figsize: "Tuple[float, float]" = (6.0, 4.0),
+    figsize: "Tuple[float, float]" = (8.0, 4.0),
     usetex: "bool" = False,
     style_file_or_name: "str" = "classic",
 ) -> "None":
@@ -119,36 +116,42 @@ def plot_metrics(
         fig = plt.figure(figsize=figsize)
         # Train
         plt.plot(
-            metrics["epoch"],
-            metrics["train loss"],
-            marker="o",
-            zorder=0,
-            label="Train loss",
+            metrics["epoch"], metrics["train loss"], marker="o", label="Train loss",
         )
 
         # Validation
         plt.plot(
             metrics["epoch"],
             metrics["valid loss"],
-            marker="x",
-            zorder=0,
+            marker="X",
             label="Validation loss",
         )
+        for i, value in enumerate(metrics["valid WER"]):
+            plt.annotate(
+                f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10
+            )
 
         # Test
-        plt.plot(
-            metrics["epoch"],
-            metrics["test loss"],
-            marker="^",
-            zorder=0,
-            label="Test loss",
-        )
+        if "test_loss" in metrics:
+            plt.plot(
+                metrics["epoch"], metrics["test loss"], marker="D", label="Test loss",
+            )
+            for i, value in enumerate(metrics["test WER"]):
+                plt.annotate(
+                    f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10
+                )
 
         plt.grid()
         plt.title(title)
-        plt.legend()
+        plt.legend(fontsize=10)
         plt.xlabel("Epoch")
+        xmin, xmax = plt.xlim()
+        xrange = xmax - xmin
+        plt.xlim(xmin - 0.025 * xrange, xmax + 0.025 * xrange)
         plt.ylabel("Loss")
+        ymin, ymax = plt.ylim()
+        yrange = ymax - ymin
+        plt.ylim(ymin - 0.025 * yrange, ymax + 0.025 * yrange)
         fig.tight_layout()
         plt.savefig(output_image, bbox_inches="tight")
         plt.close()
@@ -166,7 +169,7 @@ if __name__ == "__main__":
         "-t", "--title", default=None, help="plot title",
     )
     parser.add_argument(
-        "-f", "--figsize", nargs=2, default=(6.0, 4.0), type=float, help="figure size",
+        "-f", "--figsize", nargs=2, default=(8.0, 4.0), type=float, help="figure size",
     )
     parser.add_argument(
         "-u", "--usetex", action="store_true", help="render text with LaTeX",
@@ -181,9 +184,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     metrics = parse_train_log(args.train_log)
     output_image = args.output_image or args.train_log.replace(".txt", ".png")
-    title = args.title or output_image.capitalize().replace("_", " ").replace(
-        ".png", ""
-    )
+    title = args.title or args.train_log
     plot_metrics(
         metrics,
         output_image,

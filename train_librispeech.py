@@ -30,17 +30,17 @@ class ASR(sb.Brain):
         current_epoch = self.hparams.epoch_counter.current
 
         batch = batch.to(self.device)
-        wavs, wavs_lens = batch.sig
+        sigs, sigs_lens = batch.sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Add speed perturbation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
             if "speed_perturb" in self.modules:
-                wavs = self.modules.speed_perturb(wavs)
+                sigs = self.modules.speed_perturb(sigs)
 
         # Extract features
-        feats = self.modules.feature_extractor(wavs)
-        feats = self.modules.normalizer(feats, wavs_lens, epoch=current_epoch)
+        feats = self.modules.feature_extractor(sigs)
+        feats = self.modules.normalizer(feats, sigs_lens, epoch=current_epoch)
 
         # Add augmentation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -49,7 +49,7 @@ class ASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        enc_out = self.modules.encoder(feats, wavs_lens)
+        enc_out = self.modules.encoder(feats, sigs_lens)
         enc_out = self.modules.encoder_proj(enc_out)
 
         # Forward decoder/predictor
@@ -96,14 +96,14 @@ class ASR(sb.Brain):
         logits, ctc_logprobs, ce_logprobs, hyps = predictions
 
         ids = batch.id
-        _, wavs_lens = batch.sig
+        _, sigs_lens = batch.sig
         tokens, tokens_lens = batch.tokens
         tokens_eos, tokens_eos_lens = batch.tokens_eos
 
-        loss = self.hparams.transducer_loss(logits, tokens, wavs_lens, tokens_lens)
+        loss = self.hparams.transducer_loss(logits, tokens, sigs_lens, tokens_lens)
         if ctc_logprobs is not None:
             loss += self.hparams.ctc_weight * self.hparams.ctc_loss(
-                ctc_logprobs, tokens, wavs_lens, tokens_lens
+                ctc_logprobs, tokens, sigs_lens, tokens_lens
             )
         if ce_logprobs is not None:
             loss += self.hparams.ce_weight * self.hparams.ce_loss(

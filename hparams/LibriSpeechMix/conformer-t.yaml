@@ -50,17 +50,19 @@ num_ctc_epochs: 5
 ctc_weight: 0.47
 num_ce_epochs: 5
 ce_weight: 0.47
-num_speaker_embedding_rec_epochs: 0
-speaker_embedding_rec_weight: 0.47
+num_speaker_embedding_pred_epochs: 0
+speaker_embedding_pred_weight: 0.47
+target_sig_pred_weight: 0.0
+auxiliary_neurons: 100
 
 grad_accumulation_factor: 4
 dynamic_batching: True
 train_batch_size: 3
 valid_batch_size: 6
 test_batch_size: 5
-train_max_batch_length: 60.0  # Seconds
-valid_max_batch_length: 120.0  # Seconds
-test_max_batch_length: 100.0  # Seconds
+train_max_batch_length: 50.0  # Seconds
+valid_max_batch_length: 100.0  # Seconds
+test_max_batch_length: 75.0  # Seconds
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 8
@@ -238,6 +240,8 @@ ctc_loss: !name:speechbrain.nnet.losses.ctc_loss
 
 ce_loss: !name:speechbrain.nnet.losses.nll_loss
     label_smoothing: 0.1
+
+mse_loss: !name:speechbrain.nnet.losses.mse_loss
 
 # Optimizers
 opt_class: !name:torch.optim.AdamW

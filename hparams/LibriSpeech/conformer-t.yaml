@@ -22,15 +22,6 @@ valid_csv: !ref <save_folder>/dev-clean.csv
 test_csv: [!ref <save_folder>/test-clean.csv]
 skip_prep: False
 
-# Settings for overfitting test
-#train_splits: [train-clean-100]
-#dev_splits: [dev-clean]
-#test_splits: [test-clean]
-#train_csv: !ref <save_folder>/dev-clean.csv
-#valid_csv: !ref <save_folder>/dev-clean.csv
-#test_csv: [!ref <save_folder>/dev-clean.csv]
-#skip_prep: False
-
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>
 save_folder: !ref <output_folder>/save
