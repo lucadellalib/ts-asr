@@ -61,8 +61,8 @@ train_batch_size: 3
 valid_batch_size: 6
 test_batch_size: 5
 train_max_batch_length: 50.0  # Seconds
-valid_max_batch_length: 100.0  # Seconds
-test_max_batch_length: 75.0  # Seconds
+valid_max_batch_length: 50.0  # Seconds
+test_max_batch_length: 50.0  # Seconds
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 8

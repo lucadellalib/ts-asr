@@ -48,8 +48,8 @@ ce_weight: 0.47
 
 grad_accumulation_factor: 4
 train_max_batch_length: 80  # Seconds
-valid_max_batch_length: 160  # Seconds
-test_max_batch_length: 120  # Seconds
+valid_max_batch_length: 80  # Seconds
+test_max_batch_length: 80  # Seconds
 num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 8

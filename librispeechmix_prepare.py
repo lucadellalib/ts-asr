@@ -4,6 +4,7 @@ Authors
  * Luca Della Libera 2023
 """
 
+import copy
 import json
 import logging
 import os
@@ -142,22 +143,24 @@ def prepare_librispeechmix(
                 for input_line in fr:
                     input_entry = json.loads(input_line)
                     ID = input_entry["id"]
+                    wavs = input_entry["wavs"]
                     texts = input_entry["texts"][:num_targets]
                     speaker_profile = input_entry["speaker_profile"]
                     speaker_profile_index = input_entry["speaker_profile_index"][
                         :num_targets
                     ]
-                    wavs = input_entry["wavs"]
-                    delays = input_entry["delays"]
-                    durations = input_entry["durations"]
-                    # speakers = input_entry["speakers"]
-                    # genders = input_entry["genders"]
+                    speakers = input_entry["speakers"]
+                    genders = input_entry["genders"]
 
                     wavs = [os.path.join("{DATA_ROOT}", wav) for wav in wavs]
                     for target_speaker_idx, (text, idx) in enumerate(
                         zip(texts, speaker_profile_index)
                     ):
                         ID_text = f"{ID}_text-{target_speaker_idx}"
+
+                        # Read here to not overwrite
+                        delays = copy.deepcopy(input_entry["delays"])
+                        durations = copy.deepcopy(input_entry["durations"])
 
                         if suppress_delay:
                             delays = [0.0 for _ in delays]
@@ -169,9 +172,8 @@ def prepare_librispeechmix(
                             delays[target_speaker_idx] = 0
 
                         start = 0.0
-                        duration = max_duration = max(
-                            [d + x for d, x in zip(delays, durations)]
-                        )
+                        duration = max([d + x for d, x in zip(delays, durations)])
+                        max_duration = copy.deepcopy(duration)
                         if trim_nontarget is not None:
                             start = delays[target_speaker_idx]
                             duration = durations[target_speaker_idx]
@@ -189,8 +191,11 @@ def prepare_librispeechmix(
                                 "delays": delays,
                                 "start": start,
                                 "duration": duration,
+                                "durations": durations,
                                 "target_speaker_idx": target_speaker_idx,
                                 "wrd": text,
+                                "speakers": speakers,
+                                "genders": genders,
                             }
                             output_entries[ID_enroll] = output_entry
 
