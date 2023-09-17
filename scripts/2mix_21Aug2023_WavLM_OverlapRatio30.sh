@@ -9,9 +9,8 @@ python -m torch.distributed.launch --nproc_per_node=8 \
 train_librispeechmix_pretrained.py \
 hparams/LibriSpeechMix/conformer-t_wavlm.yaml \
 --data_folder $DATA_DIR/LibriSpeechMix-21Aug2023 \
---output_folder results/2mix_21Aug2023_WavLM_TrimNonTarget6s_TargetSigPred \
+--output_folder results/2mix_21Aug2023_WavLM_OverlapRatio30 \
 --num_epochs 100 \
 --augment True \
---trim_nontarget 6.0 \
---target_sig_pred_weight 0.47 \
+--overlap_ratio 0.3 \
 --distributed_launch

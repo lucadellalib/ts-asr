@@ -78,7 +78,7 @@ class TransformerEncoder(TransformerInterface):
         If True, will apply a linear transformation of size `input_size // 2`.
         -> Branchformer.
     injection_mode : str, optional
-        The embedding injection mode (prod, sum, cat, or none).
+        The embedding injection mode (prod, sum, cat, or None).
 
     Example
     -------
@@ -117,7 +117,7 @@ class TransformerEncoder(TransformerInterface):
         csgu_linear_units: "Optional[int]" = 3072,
         gate_activation: "Optional[nn.Module]" = nn.Identity,
         use_linear_after_conv: "Optional[bool]" = False,
-        injection_mode: "str" = "prod",
+        injection_mode: "Optional[str]" = "prod",
     ):
         super().__init__(
             d_model=d_model,
@@ -188,16 +188,16 @@ class TransformerEncoder(TransformerInterface):
 
         # Inject speaker embedding
         if speaker_embs is not None:
-            if self.injection_mode == "sum":
-                src += speaker_embs
-            elif self.injection_mode == "prod":
+            if self.injection_mode == "prod":
                 src *= speaker_embs
+            elif self.injection_mode == "sum":
+                src += speaker_embs
             elif self.injection_mode == "cat":
                 src = torch.cat(
                     [src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1
                 )
                 src = self.cat_proj(src)
-            elif self.injection_mode == "none":
+            elif self.injection_mode is None:
                 pass
             else:
                 raise NotImplementedError

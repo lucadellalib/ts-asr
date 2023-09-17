@@ -1,4 +1,4 @@
-# Activate the virtual environment: conda activate pytorch_p38
+# Activate virtual environment: conda activate pytorch_p38
 
 mkdir workspace
 cp -r /efs-storage/TS-ASR workspace/
