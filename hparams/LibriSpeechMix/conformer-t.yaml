@@ -145,7 +145,7 @@ frontend: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
     out_channels: (128, 128)
     kernel_sizes: (3, 3)
     strides: (2, 2)
-    residuals: (True, True)
+    residuals: (False, False)
     padding: !ref <padding>
 
 encoder: !new:models.transformer.TransformerEncoder
