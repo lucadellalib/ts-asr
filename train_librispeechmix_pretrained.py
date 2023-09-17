@@ -3,10 +3,10 @@
 """Recipe for training a transducer-based TS-ASR system
 (see https://arxiv.org/abs/2209.04175).
 
-The speaker encoder is trained from scratch.
+A pretrained speaker verification model (kept frozen) is used as a speaker encoder.
 
 To run this recipe, do the following:
-> python train_librispeechmix_scratch.py hparams/LibriSpeechMix/<config>_scratch.yaml
+> python train_librispeechmix_pretrained.py hparams/LibriSpeechMix/<config>_<speaker-encoder>.yaml
 
 Authors
  * Luca Della Libera 2023
@@ -29,6 +29,7 @@ from speechbrain.nnet.containers import Sequential
 from speechbrain.nnet.linear import Linear
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import if_main_process, run_on_main
+from transformers import AutoModelForAudioXVector
 
 
 class TSASR(sb.Brain):
@@ -41,14 +42,21 @@ class TSASR(sb.Brain):
         enroll_sigs, enroll_sigs_lens = batch.enroll_sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
-        # Extract speaker features
-        feats = self.modules.feature_extractor(enroll_sigs)
-        feats = self.modules.normalizer(feats, enroll_sigs_lens, epoch=current_epoch)
-
         # Extract speaker embedding
-        feats = self.modules.frontend(feats)
-        speaker_embs = self.modules.speaker_encoder(feats, enroll_sigs_lens)
-        speaker_embs = self.modules.speaker_proj(speaker_embs, enroll_sigs_lens)
+        with torch.no_grad():
+            self.modules.speaker_encoder.eval()
+            speaker_embs = self.modules.speaker_encoder(
+                input_values=enroll_sigs,
+                attention_mask=length_to_mask(
+                    (enroll_sigs_lens * enroll_sigs.shape[-1])
+                    .ceil()
+                    .clamp(max=enroll_sigs.shape[-1])
+                    .int()
+                ).long(),  # 0 for masked tokens
+                output_attentions=False,
+                output_hidden_states=False,
+            ).embeddings[:, None, :]
+        speaker_embs = self.modules.speaker_proj(speaker_embs)
 
         # Add speed perturbation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -474,9 +482,15 @@ if __name__ == "__main__":
     run_on_main(hparams["pretrainer"].collect_files)
     run_on_main(hparams["pretrainer"].load_collected)
 
+    # Download the pretrained speaker encoder
+    speaker_encoder = AutoModelForAudioXVector.from_pretrained(
+        hparams["speaker_encoder_path"]
+    )
+    hparams["modules"]["speaker_encoder"] = speaker_encoder
+
     # Log number of parameters in the speaker encoder
     sb.core.logger.info(
-        f"{round(sum([x.numel() for x in hparams['speaker_encoder'].parameters()]) / 1e6)}M parameters in speaker encoder"
+        f"{round(sum([x.numel() for x in speaker_encoder.parameters()]) / 1e6)}M parameters in frozen speaker encoder"
     )
 
     # Add module for decoder biasing
