@@ -214,6 +214,10 @@ class TSASR(sb.Brain):
                 speaker_embs_pred, speaker_embs, enroll_sigs_lens
             )
         if target_sigs_pred is not None:
+            target_sigs = torch.nn.functional.pad(
+                target_sigs,
+                [0, 0, 0, target_sigs_pred.shape[-2] - target_sigs.shape[-2]],
+            )
             loss += self.hparams.target_sig_pred_weight * self.hparams.mse_loss(
                 target_sigs_pred, target_sigs, target_sigs_lens
             )
