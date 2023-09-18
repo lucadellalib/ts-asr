@@ -179,7 +179,9 @@ def prepare_librispeechmix(
                             duration = durations[target_speaker_idx]
                             new_start = max(0.0, start - trim_nontarget)
                             duration += start - new_start
-                            duration = min(duration + trim_nontarget, max_duration - new_start)
+                            duration = min(
+                                duration + trim_nontarget, max_duration - new_start
+                            )
 
                         enroll_wavs = speaker_profile[idx]
                         for enroll_wav in enroll_wavs[:num_enrolls]:
