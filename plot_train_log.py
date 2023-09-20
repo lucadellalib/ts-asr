@@ -34,12 +34,12 @@ _EXPECTED_METRICS = [
 ]
 
 
-def parse_train_log(train_log_file: "str") -> "Dict[str, ndarray]":
+def parse_train_log(train_log: "str") -> "Dict[str, ndarray]":
     """Parse train log to extract metric names and values.
 
     Arguments
     ---------
-    train_log_file:
+    train_log:
         The path to the train log file.
 
     Returns
@@ -53,7 +53,7 @@ def parse_train_log(train_log_file: "str") -> "Dict[str, ndarray]":
 
     """
     metrics = defaultdict(list)
-    with open(train_log_file) as f:
+    with open(train_log) as f:
         for line in f:
             line = line.strip().replace(" - ", ", ")
             if not line:
@@ -93,7 +93,7 @@ def plot_metrics(
     output_image:
         The path to the output image.
     title:
-        The plot title.
+        The title.
     figsize:
         The figure size.
     usetex:
@@ -127,9 +127,10 @@ def plot_metrics(
             label="Validation loss",
         )
         for i, value in enumerate(metrics["valid WER"]):
-            plt.annotate(
-                f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10
-            )
+            if i % 10 == 0:
+                plt.annotate(
+                    f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10,
+                )
 
         # Test
         if "test_loss" in metrics:
@@ -137,9 +138,10 @@ def plot_metrics(
                 metrics["epoch"], metrics["test loss"], marker="D", label="Test loss",
             )
             for i, value in enumerate(metrics["test WER"]):
-                plt.annotate(
-                    f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10
-                )
+                if i % 10 == 0:
+                    plt.annotate(
+                        f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10,
+                    )
 
         plt.grid()
         plt.title(title)
@@ -163,10 +165,10 @@ if __name__ == "__main__":
         "train_log", help="path to train log",
     )
     parser.add_argument(
-        "-o", "--output_image", default=None, help="path to output image",
+        "-o", "--output_image", help="path to output image",
     )
     parser.add_argument(
-        "-t", "--title", default=None, help="plot title",
+        "-t", "--title", help="title",
     )
     parser.add_argument(
         "-f", "--figsize", nargs=2, default=(8.0, 4.0), type=float, help="figure size",

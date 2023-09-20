@@ -376,7 +376,7 @@ def dataio_prepare(hparams, tokenizer):
         )
         # Trim enrollment signal if too long
         enroll_sig = enroll_sig[
-            : math.ceil(hparams["max_enroll_length"] * hparams["sample_rate"])
+            : math.ceil(hparams["trim_enroll"] * hparams["sample_rate"])
         ]
         yield enroll_sig
 
