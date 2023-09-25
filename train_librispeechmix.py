@@ -338,7 +338,7 @@ def dataio_prepare(hparams, tokenizer):
             sigs.append(sig)
 
         tmp = []
-        for i, (sig, delay) in enumerate(sigs, delays):
+        for i, (sig, delay) in enumerate(zip(sigs, delays)):
             if i != target_speaker_idx:
                 if hparams["gain_nontarget"] != 0:
                     target_sig_power = (sigs[target_speaker_idx] ** 2).mean()
