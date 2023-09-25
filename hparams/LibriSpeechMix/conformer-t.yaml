@@ -34,7 +34,7 @@ train_remove_if_longer: 60.0  # Seconds
 valid_remove_if_longer: 60.0  # Seconds
 test_remove_if_longer: 60.0  # Seconds
 trim_enroll: 20.0  # Must be >= 0.325, the minimum allowed by WavLM
-gain_nontarget: 0  # eg. -15 dB (< 0 => larger target speaker SIR)
+gain_nontarget: 0  # With respect to the power of the target signal (< 0 => larger target speaker SIR)
 sample_rate: 16000
 sorting: ascending
 
@@ -46,9 +46,9 @@ augment: False
 
 # Training parameters
 num_epochs: 100
-num_ctc_epochs: 5
+num_ctc_epochs: 0
 ctc_weight: 0.47
-num_ce_epochs: 5
+num_ce_epochs: 0
 ce_weight: 0.47
 num_speaker_embedding_pred_epochs: 0
 speaker_embedding_pred_weight: 0.47
@@ -92,18 +92,17 @@ d_ffn: 2048
 kernel_size: 31
 causal: False
 padding: same  # Set to causal if `causal` is True
-injection_mode: prod
+injection_mode: cat
 
 #embedding_dim: 128
 decoder_neurons: 512
 decoder_num_layers: 1
-decoder_biasing: False
 
 joint_dim: 640
 
 # Decoding parameters
 valid_search_freq: 1
-beam_size: 10
+beam_size: 15
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
 expand_beam: 2.3

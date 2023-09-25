@@ -8,8 +8,9 @@ cd $ROOT_DIR
 python -m torch.distributed.launch --nproc_per_node=8 \
 train_librispeechmix_pretrained.py \
 hparams/LibriSpeechMix/conformer-t_wavlm.yaml \
---data_folder $DATA_DIR/LibriSpeechMix-14Sep2023 \
---output_folder results/2mix_14Sep2023_WavLM \
---num_epochs 100 \
+--data_folder $DATA_DIR/LibriSpeechMix-21Aug2023 \
+--output_folder results/2mix_21Aug2023_WavLM_TrimNonTarget10s \
+--num_epochs 40 \
 --augment True \
+--trim_nontarget 10.0 \
 --distributed_launch

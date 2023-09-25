@@ -54,8 +54,14 @@ class TSASR(sb.Brain):
                     .int()
                 ).long(),  # 0 for masked tokens
                 output_attentions=False,
-                output_hidden_states=False,
-            ).embeddings[:, None, :]
+                output_hidden_states=self.hparams.injection_mode == "cross_attention",
+            )
+        if self.hparams.injection_mode == "cross_attention":
+            speaker_embs = speaker_embs.hidden_states[-1][
+                ..., : self.hparams.speaker_embedding_dim
+            ]
+        else:
+            speaker_embs = speaker_embs.embeddings[:, None, :]
         speaker_embs = self.modules.speaker_proj(speaker_embs)
 
         # Add speed perturbation if specified
@@ -74,23 +80,14 @@ class TSASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        enc_out = self.modules.encoder(feats, mixed_sigs_lens, speaker_embs)
+        enc_out = self.modules.encoder(
+            feats, mixed_sigs_lens, speaker_embs, enroll_sigs_lens
+        )
         enc_out = self.modules.encoder_proj(enc_out)
 
         # Forward decoder/predictor
         embs = self.modules.embedding(tokens_bos)
-        if self.hparams.decoder_biasing:
-            dec_hidden = self.modules.decoder_hidden_proj(speaker_embs)
-            dec_hidden = dec_hidden.reshape(
-                -1, 2, self.hparams.decoder_num_layers, self.hparams.decoder_neurons
-            )
-            dec_hidden = (
-                dec_hidden[:, 0].movedim(0, 1),
-                dec_hidden[:, 1].movedim(0, 1),
-            )
-        else:
-            dec_hidden = None
-        dec_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens, hx=dec_hidden)
+        dec_out, _ = self.modules.decoder(embs, lengths=tokens_bos_lens)
         dec_out = self.modules.decoder_proj(dec_out)
 
         # Forward joiner
@@ -355,7 +352,17 @@ def dataio_prepare(hparams, tokenizer):
                 sig[0], sample_rate, hparams["sample_rate"],
             )
             if i != target_speaker_idx:
-                sig = torchaudio.functional.gain(sig, hparams["gain_nontarget"])
+                if hparams["gain_nontarget"] != 0:
+                    target_sig_power = (sigs[target_speaker_idx] ** 2).mean()
+                    ratio = 10 ** (
+                        hparams["gain_nontarget"] / 10
+                    )  # ratio = interference_sig_power / target_sig_power
+                    desired_interference_sig_power = ratio * target_sig_power
+                    interference_sig_power = (sig ** 2).mean()
+                    gain = (
+                        desired_interference_sig_power / interference_sig_power
+                    ).sqrt()
+                    sig *= gain
             frame_delay = math.ceil(delay * hparams["sample_rate"])
             sig = torch.nn.functional.pad(sig, [frame_delay, 0])
             sigs.append(sig)
@@ -496,18 +503,6 @@ if __name__ == "__main__":
     sb.core.logger.info(
         f"{round(sum([x.numel() for x in speaker_encoder.parameters()]) / 1e6)}M parameters in frozen speaker encoder"
     )
-
-    # Add module for decoder biasing
-    if hparams["decoder_biasing"]:
-        decoder_hidden_proj = Linear(
-            input_size=hparams["d_model"],
-            n_neurons=2 * hparams["decoder_neurons"] * hparams["decoder_num_layers"],
-        )
-        hparams["modules"]["decoder_hidden_proj"] = decoder_hidden_proj
-        hparams["model"].append(decoder_hidden_proj)
-        hparams["checkpointer"].add_recoverable(
-            "decoder_hidden_proj", decoder_hidden_proj
-        )
 
     # Add module for speaker embedding prediction
     if hparams["num_speaker_embedding_pred_epochs"] > 0:

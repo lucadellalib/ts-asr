@@ -16,6 +16,7 @@ from speechbrain.lobes.models.transformer.Transformer import (
     get_lookahead_mask,
 )
 from speechbrain.nnet.activations import Swish
+from speechbrain.nnet.attention import MultiheadAttention
 from speechbrain.nnet.containers import ModuleList
 from speechbrain.nnet.linear import Linear
 from torch import nn
@@ -78,7 +79,7 @@ class TransformerEncoder(TransformerInterface):
         If True, will apply a linear transformation of size `input_size // 2`.
         -> Branchformer.
     injection_mode : str, optional
-        The embedding injection mode (prod, sum, cat, or None).
+        The embedding injection mode (prod, sum, cat, cross_attention, or None).
 
     Example
     -------
@@ -154,11 +155,15 @@ class TransformerEncoder(TransformerInterface):
             self.cat_proj = Linear(
                 input_size=2 * d_model, n_neurons=d_model, bias=True,
             )
+        elif injection_mode == "cross_attention":
+            self.speaker_attn = MultiheadAttention(
+                nhead, d_model, dropout, bias,
+            )
 
         # Reset parameters using xavier_normal_
         self._init_params()
 
-    def forward(self, src, wav_len=None, speaker_embs=None):
+    def forward(self, src, wav_len=None, speaker_embs=None, speaker_embs_length=None):
         """Forward pass.
 
         Arguments
@@ -170,6 +175,8 @@ class TransformerEncoder(TransformerInterface):
             length to padded length for each example.
         speaker_embs : torch.Tensor, optional
             The speaker embedding.
+        speaker_embs_length : torch.Tensor, optional
+            The speaker embedding length (used only if injection_mode == "cross_attention").
 
         Returns
         -------
@@ -197,6 +204,11 @@ class TransformerEncoder(TransformerInterface):
                     [src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1
                 )
                 src = self.cat_proj(src)
+            elif self.injection_mode == "cross_attention":
+                key_padding_mask = None
+                if speaker_embs_length is not None:
+                    key_padding_mask = ~length_to_mask((speaker_embs_length * speaker_embs.shape[-2]).round()).bool()
+                src, _ = self.speaker_attn(src, speaker_embs, speaker_embs, key_padding_mask=key_padding_mask)
             elif self.injection_mode is None:
                 pass
             else:

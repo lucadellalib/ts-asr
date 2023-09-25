@@ -8,11 +8,12 @@ cd $ROOT_DIR
 python -m torch.distributed.launch --nproc_per_node=8 \
 train_librispeechmix_pretrained.py \
 hparams/LibriSpeechMix/conformer-t_wavlm.yaml \
---data_folder $DATA_DIR/2mix_14Sep2023_WavLM_1Target_16s \
---output_folder results/2mix_14Sep2023_WavLM \
---num_epochs 100 \
+--data_folder $DATA_DIR/LibriSpeechMix-21Aug2023 \
+--output_folder results/2mix_21Aug2023_WavLM_TrimNonTarget0s_TargetMin_SuppressDelay_SpkEmbNone \
+--num_epochs 40 \
 --augment True \
---train_remove_if_longer 16.0 \
---valid_remove_if_longer 16.0 \
---test_remove_if_longer 16.0 \
+--trim_nontarget 0.0 \
+--num_targets min \
+--suppress_delay True \
+--injection_mode null \
 --distributed_launch

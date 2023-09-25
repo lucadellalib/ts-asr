@@ -9,12 +9,9 @@ python -m torch.distributed.launch --nproc_per_node=8 \
 train_librispeechmix_pretrained.py \
 hparams/LibriSpeechMix/conformer-t_wavlm.yaml \
 --data_folder $DATA_DIR/LibriSpeechMix-21Aug2023 \
---output_folder results/2mix_21Aug2023_WavLM_1Target_16s_SpkEmbSum \
---num_epochs 100 \
+--output_folder results/2mix_21Aug2023_WavLM_TrimNonTarget0s_TargetFirst \
+--num_epochs 40 \
 --augment True \
---num_targets 1 \
---train_remove_if_longer 16.0 \
---valid_remove_if_longer 16.0 \
---test_remove_if_longer 16.0 \
---injection_mode sum \
+--trim_nontarget 0.0 \
+--num_targets [0] \
 --distributed_launch

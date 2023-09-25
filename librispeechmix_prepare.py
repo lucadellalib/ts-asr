@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from collections import defaultdict
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 
 __all__ = ["prepare_librispeechmix"]
@@ -39,7 +39,7 @@ def prepare_librispeechmix(
     data_folder: "str",
     save_folder: "Optional[str]" = None,
     splits: "Sequence[str]" = _DEFAULT_SPLITS,
-    num_targets: "Optional[int]" = None,
+    num_targets: "Optional[Union[int, List[int]], str]" = None,
     num_enrolls: "Optional[int]" = None,
     trim_nontarget: "Optional[float]" = None,
     suppress_delay: "Optional[bool]" = None,
@@ -62,7 +62,9 @@ def prepare_librispeechmix(
         (e.g. "dev-clean-1mix" and "dev-clean-2mix").
         Default to all the available splits.
     num_targets:
-        The maximum number of target utterance to extract from each mixture.
+        The maximum number of target utterances to extract from each mixture.
+        If a list, only the utterances at the given indices are extracted.
+        If `min`, use only the shortest utterance as a target.
         Default to all the available utterances.
     num_enrolls:
         The maximum number of enrollment utterances per target speaker.
@@ -144,23 +146,30 @@ def prepare_librispeechmix(
                     input_entry = json.loads(input_line)
                     ID = input_entry["id"]
                     wavs = input_entry["wavs"]
-                    texts = input_entry["texts"][:num_targets]
+                    durations = copy.deepcopy(input_entry["durations"])
                     speaker_profile = input_entry["speaker_profile"]
-                    speaker_profile_index = input_entry["speaker_profile_index"][
-                        :num_targets
-                    ]
+                    texts = input_entry["texts"]
+                    speaker_profile_index = input_entry["speaker_profile_index"]
                     speakers = input_entry["speakers"]
                     genders = input_entry["genders"]
 
+                    if isinstance(num_targets, list):
+                        target_speaker_idxes = num_targets
+                    elif num_targets == "min":
+                        min_duration = min(durations)
+                        min_idx = durations.index(min_duration)
+                        target_speaker_idxes = [min_idx]
+                    else:
+                        target_speaker_idxes = list(range(len(texts)))
+
                     wavs = [os.path.join("{DATA_ROOT}", wav) for wav in wavs]
-                    for target_speaker_idx, (text, idx) in enumerate(
-                        zip(texts, speaker_profile_index)
-                    ):
+                    for target_speaker_idx in target_speaker_idxes:
+                        text = texts[target_speaker_idx]
+                        idx = speaker_profile_index[target_speaker_idx]
                         ID_text = f"{ID}_text-{target_speaker_idx}"
 
                         # Read here to not overwrite
                         delays = copy.deepcopy(input_entry["delays"])
-                        durations = copy.deepcopy(input_entry["durations"])
 
                         if suppress_delay:
                             delays = [0.0 for _ in delays]

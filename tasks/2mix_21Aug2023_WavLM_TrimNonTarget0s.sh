@@ -10,7 +10,7 @@ train_librispeechmix_pretrained.py \
 hparams/LibriSpeechMix/conformer-t_wavlm.yaml \
 --data_folder $DATA_DIR/LibriSpeechMix-21Aug2023 \
 --output_folder results/2mix_21Aug2023_WavLM_TrimNonTarget0s \
---num_epochs 100 \
+--num_epochs 40 \
 --augment True \
 --trim_nontarget 0.0 \
 --distributed_launch

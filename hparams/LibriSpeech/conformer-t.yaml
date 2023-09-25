@@ -88,7 +88,7 @@ joint_dim: 640
 
 # Decoding parameters
 valid_search_freq: 1
-beam_size: 10
+beam_size: 15
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
 expand_beam: 2.3
