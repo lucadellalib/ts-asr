@@ -327,7 +327,7 @@ def dataio_prepare(hparams, tokenizer):
     def audio_pipeline(wavs, enroll_wav, delays, start, duration, target_speaker_idx):
         # Mixed signal
         sigs = []
-        for i, (wav, delay) in enumerate(zip(wavs, delays)):
+        for wav in wavs:
             try:
                 sig, sample_rate = torchaudio.load(wav)
             except RuntimeError:
@@ -335,6 +335,10 @@ def dataio_prepare(hparams, tokenizer):
             sig = torchaudio.functional.resample(
                 sig[0], sample_rate, hparams["sample_rate"],
             )
+            sigs.append(sig)
+
+        tmp = []
+        for i, (sig, delay) in enumerate(sigs, delays):
             if i != target_speaker_idx:
                 if hparams["gain_nontarget"] != 0:
                     target_sig_power = (sigs[target_speaker_idx] ** 2).mean()
@@ -349,7 +353,9 @@ def dataio_prepare(hparams, tokenizer):
                     sig *= gain
             frame_delay = math.ceil(delay * hparams["sample_rate"])
             sig = torch.nn.functional.pad(sig, [frame_delay, 0])
-            sigs.append(sig)
+            tmp.append(sig)
+        sigs = tmp
+
         max_length = max(len(x) for x in sigs)
         sigs = [torch.nn.functional.pad(x, [0, max_length - len(x)]) for x in sigs]
         mixed_sig = sigs[0].clone()
