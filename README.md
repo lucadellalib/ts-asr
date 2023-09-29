@@ -9,10 +9,6 @@ speech recognition (TS-ASR) systems as proposed in [Streaming Target-Speaker ASR
 
 ## ⚡ Datasets
 
-### LibriSpeech
-
-Download the data from the [official website](https://www.openslr.org/12) and extract them  to `<path-to-data-folder>`.
-
 ### LibriSpeechMix
 
 Generate the LibriSpeechMix data in `<path-to-data-folder>` following the
@@ -54,8 +50,6 @@ python -m torch.distributed.launch --nproc_per_node=<num-gpus-per-node> \
 --nnodes=<num-nodes> --node_rank=<node-rank> --master_addr <rank-0-ip-addr> --master_port 5555 \
 train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
 ```
-
-**NOTE**: a single GPU is used for inference, even when multiple GPUs are available.
 
 ### Examples
 

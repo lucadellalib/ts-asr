@@ -859,10 +859,10 @@ class Brain:
             loader_kwargs = self._train_loader_specifics(dataset, loader_kwargs)
         # This commented-out code block is useful when one can ensure
         # metric reporting is DDP-valid for VALID & EVAL datasets.
-        # elif self.distributed_launch:
-        #     loader_kwargs = sb.dataio.dataloader.distributed_loader_specifics(
-        #         self.distributed_launch, self.rank, dataset, loader_kwargs
-        #     )
+        elif self.distributed_launch:
+             loader_kwargs = sb.dataio.dataloader.distributed_loader_specifics(
+                 self.distributed_launch, self.rank, dataset, loader_kwargs
+             )
         dataloader = sb.dataio.dataloader.make_dataloader(
             dataset, **loader_kwargs
         )
@@ -1050,14 +1050,15 @@ class Brain:
         -------
         detached loss
         """
-        should_step = (self.valid_step + 1) % self.grad_accumulation_factor == 0
+        self.valid_step += 1
+        should_step = (self.valid_step % self.grad_accumulation_factor) == 0
 
         # should_step=True => synchronize gradient between DDP processes
         with self.no_sync(not should_step):
             with torch.autocast(
-                    device_type=torch.device(self.device).type,
-                    dtype=torch.bfloat16 if self.bfloat16_mix_prec else torch.float16,
-                    enabled=self.auto_mix_prec,
+                device_type=torch.device(self.device).type,
+                dtype=torch.bfloat16 if self.bfloat16_mix_prec else torch.float16,
+                enabled=self.auto_mix_prec,
             ):
                 outputs = self.compute_forward(batch, sb.Stage.TRAIN)
 
@@ -1085,7 +1086,6 @@ class Brain:
                     self.optimizer.step()
                 self.zero_grad(set_to_none=True)
                 self.optimizer_step += 1
-            self.valid_step += 1
 
         self.on_fit_batch_end(batch, outputs, loss, should_step)
         return loss.detach().cpu()

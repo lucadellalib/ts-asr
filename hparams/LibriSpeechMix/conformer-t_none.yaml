@@ -1,12 +1,12 @@
 # ############################################################################
-# Model: Conformer transducer with frozen WavLM speaker encoder
+# Model: Conformer transducer without speaker encoder
 # Authors: Luca Della Libera 2023
 # ############################################################################
 
 # Adapted from:
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/hparams/conformer_transducer.yaml
 
-experiment_name: LibriSpeechMix/Conformer-T_WavLM
+experiment_name: LibriSpeechMix/Conformer-T_None
 
 # Seed needs to be set at top of YAML
 seed: 0
@@ -82,8 +82,6 @@ d_ffn: 2048
 kernel_size: 31
 causal: False
 padding: same  # Set to causal if `causal` is True
-injection_mode: cat
-injection_after: 0
 
 #embedding_dim: 128
 decoder_neurons: 512
@@ -100,10 +98,6 @@ expand_beam: 2.3
 
 # Pretrained model (e.g. on LibriSpeech)
 model_path: null
-
-# WavLM for speaker verification fine-tuned on LibriSpeech-960h (see https://huggingface.co/microsoft/wavlm-base-sv)
-speaker_encoder_path: microsoft/wavlm-base-sv  # Must be compatible with Hugging Face AutoModelForAudioXVector
-speaker_embedding_dim: 512  # Must match the speaker encoder's embedding size
 
 # Modules
 feature_extractor: !new:speechbrain.lobes.features.Fbank
@@ -154,8 +148,6 @@ encoder: !new:models.conformer.ConformerEncoder
     normalize_before: True
     attention_type: RelPosMHAXL
     causal: !ref <causal>
-    injection_mode: !ref <injection_mode>
-    injection_after: !ref <injection_after>
 
 encoder_proj: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <d_model>
@@ -184,10 +176,6 @@ transducer_head: !new:speechbrain.nnet.linear.Linear
     input_size: !ref <joint_dim>
     n_neurons: !ref <vocab_size>
 
-speaker_proj: !new:speechbrain.nnet.linear.Linear
-    input_size: !ref <speaker_embedding_dim>
-    n_neurons: !ref <d_model>
-
 modules:
     feature_extractor: !ref <feature_extractor>
     normalizer: !ref <normalizer>
@@ -201,14 +189,12 @@ modules:
     decoder_proj: !ref <decoder_proj>
     joiner: !ref <joiner>
     transducer_head: !ref <transducer_head>
-    speaker_proj: !ref <speaker_proj>
 
 model: !new:torch.nn.ModuleList
     [[!ref <feature_extractor>, !ref <normalizer>,
       !ref <frontend>, !ref <encoder>, !ref <encoder_proj>,
       !ref <embedding>, !ref <decoder>, !ref <decoder_proj>,
-      !ref <joiner>, !ref <transducer_head>,
-      !ref <speaker_proj>]]
+      !ref <joiner>, !ref <transducer_head>]]
 
 # Loss functions
 transducer_loss: !name:speechbrain.nnet.losses.transducer_loss

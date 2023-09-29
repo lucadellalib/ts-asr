@@ -114,6 +114,7 @@ def plot_metrics(
     with plt.style.context(style_file_or_name):
         rc("text", usetex=usetex)
         fig = plt.figure(figsize=figsize)
+
         # Train
         plt.plot(
             metrics["epoch"], metrics["train loss"], marker="o", label="Train loss",
@@ -138,10 +139,9 @@ def plot_metrics(
                 metrics["epoch"], metrics["test loss"], marker="D", label="Test loss",
             )
             for i, value in enumerate(metrics["test WER"]):
-                if i % 10 == 0:
-                    plt.annotate(
-                        f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10,
-                    )
+                plt.annotate(
+                    f"WER={value}%", (i + 1, metrics["test loss"][i]), fontsize=10,
+                )
 
         plt.grid()
         plt.title(title)

@@ -2,10 +2,10 @@
 
 """Recipe for training a transducer-based TS-ASR system (see https://arxiv.org/abs/2209.04175).
 
-A pretrained speaker verification model (kept frozen) is used as a speaker encoder.
+No speaker encoder is used.
 
 To run this recipe, do the following:
-> python train_librispeechmix_pretrained.py hparams/LibriSpeechMix/<config>_<speaker-encoder>.yaml
+> python train_librispeechmix_none.py hparams/LibriSpeechMix/<config>_none.yaml
 
 Authors
  * Luca Della Libera 2023
@@ -23,11 +23,9 @@ import speechbrain as sb
 import torch
 import torchaudio
 from hyperpyyaml import load_hyperpyyaml
-from speechbrain.dataio.dataio import length_to_mask
 from speechbrain.dataio.sampler import DynamicBatchSampler
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import if_main_process, run_on_main
-from transformers import AutoModelForAudioXVector
 
 
 class TSASR(sb.Brain):
@@ -37,30 +35,7 @@ class TSASR(sb.Brain):
 
         batch = batch.to(self.device)
         mixed_sigs, mixed_sigs_lens = batch.mixed_sig
-        enroll_sigs, enroll_sigs_lens = batch.enroll_sig
         tokens_bos, tokens_bos_lens = batch.tokens_bos
-
-        # Extract speaker embedding
-        with torch.no_grad():
-            self.modules.speaker_encoder.eval()
-            speaker_embs = self.modules.speaker_encoder(
-                input_values=enroll_sigs,
-                attention_mask=length_to_mask(
-                    (enroll_sigs_lens * enroll_sigs.shape[-1])
-                    .ceil()
-                    .clamp(max=enroll_sigs.shape[-1])
-                    .int()
-                ).long(),  # 0 for masked tokens
-                output_attentions=False,
-                output_hidden_states=self.hparams.injection_mode == "cross_attention",
-            )
-        if self.hparams.injection_mode == "cross_attention":
-            speaker_embs = speaker_embs.hidden_states[-1][
-                ..., : self.hparams.speaker_embedding_dim
-            ]
-        else:
-            speaker_embs = speaker_embs.embeddings[:, None, :]
-        speaker_embs = self.modules.speaker_proj(speaker_embs)
 
         # Add speed perturbation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -78,9 +53,7 @@ class TSASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        enc_out = self.modules.encoder(
-            feats, mixed_sigs_lens, speaker_embs, enroll_sigs_lens
-        )
+        enc_out = self.modules.encoder(feats, mixed_sigs_lens)
         enc_out = self.modules.encoder_proj(enc_out)
 
         # Forward decoder/predictor
@@ -152,20 +125,16 @@ class TSASR(sb.Brain):
         if stage == sb.Stage.TRAIN:
             self.train_stats = stage_stats
         elif (
-            stage == sb.Stage.VALID
-            and current_epoch % self.hparams.valid_search_freq == 0
-        ) or stage == sb.Stage.TEST:
+            (stage == sb.Stage.VALID and current_epoch % self.hparams.valid_search_freq == 0)
+            or stage == sb.Stage.TEST
+        ):
             if self.distributed_launch:
                 # Blocking, no explicit synchronization required
                 world_size = int(os.environ["WORLD_SIZE"])
                 all_cer_scores = [None for _ in range(world_size)]
                 all_wer_scores = [None for _ in range(world_size)]
-                torch.distributed.all_gather_object(
-                    all_cer_scores, self.cer_metric.scores
-                )
-                torch.distributed.all_gather_object(
-                    all_wer_scores, self.wer_metric.scores
-                )
+                torch.distributed.all_gather_object(all_cer_scores, self.cer_metric.scores)
+                torch.distributed.all_gather_object(all_wer_scores, self.wer_metric.scores)
                 self.cer_metric.scores = list(itertools.chain(*all_cer_scores))
                 self.wer_metric.scores = list(itertools.chain(*all_wer_scores))
             stage_stats["CER"] = self.cer_metric.summarize("error_rate")
@@ -252,10 +221,10 @@ def dataio_prepare(hparams, tokenizer):
 
     # 2. Define audio pipeline
     @sb.utils.data_pipeline.takes(
-        "wavs", "enroll_wav", "delays", "start", "duration", "target_speaker_idx"
+        "wavs", "delays", "start", "duration", "target_speaker_idx"
     )
-    @sb.utils.data_pipeline.provides("mixed_sig", "enroll_sig")
-    def audio_pipeline(wavs, enroll_wav, delays, start, duration, target_speaker_idx):
+    @sb.utils.data_pipeline.provides("mixed_sig")
+    def audio_pipeline(wavs, delays, start, duration, target_speaker_idx):
         # Mixed signal
         sigs = []
         for wav in wavs:
@@ -297,22 +266,6 @@ def dataio_prepare(hparams, tokenizer):
         mixed_sig = mixed_sig[frame_start : frame_start + frame_duration]
         yield mixed_sig
 
-        # Enrollment signal
-        try:
-            enroll_sig, sample_rate = torchaudio.load(enroll_wav)
-        except RuntimeError:
-            enroll_sig, sample_rate = torchaudio.load(
-                enroll_wav.replace(".wav", ".flac")
-            )
-        enroll_sig = torchaudio.functional.resample(
-            enroll_sig[0], sample_rate, hparams["sample_rate"],
-        )
-        # Trim enrollment signal if too long
-        enroll_sig = enroll_sig[
-            : math.ceil(hparams["trim_enroll"] * hparams["sample_rate"])
-        ]
-        yield enroll_sig
-
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
 
     # 3. Define text pipeline
@@ -339,7 +292,7 @@ def dataio_prepare(hparams, tokenizer):
     # 4. Set output
     sb.dataio.dataset.set_output_keys(
         datasets,
-        ["id", "mixed_sig", "enroll_sig", "tokens_bos", "tokens", "target_words",],
+        ["id", "mixed_sig", "tokens_bos", "tokens", "target_words"],
     )
 
     return train_data, valid_data, test_data
@@ -399,17 +352,6 @@ if __name__ == "__main__":
     # Pretrain the specified modules
     run_on_main(hparams["pretrainer"].collect_files)
     run_on_main(hparams["pretrainer"].load_collected)
-
-    # Download the pretrained speaker encoder
-    speaker_encoder = AutoModelForAudioXVector.from_pretrained(
-        hparams["speaker_encoder_path"]
-    )
-    hparams["modules"]["speaker_encoder"] = speaker_encoder
-
-    # Log number of parameters in the speaker encoder
-    sb.core.logger.info(
-        f"{round(sum([x.numel() for x in speaker_encoder.parameters()]) / 1e6)}M parameters in frozen speaker encoder"
-    )
 
     # Trainer initialization
     brain = TSASR(
