@@ -22,8 +22,7 @@ Clone the repository, navigate to `<path-to-repository>`, open a terminal and ru
 
 ```bash
 pip install -e vendor/speechbrain
-cat resources/microsoft--wavlm-base.tar.gz.parta* > resources/microsoft--wavlm-base.tar.gz
-tar -xf resources/microsoft--wavlm-base.tar.gz --directory resources
+pip install -r requirements.txt
 ```
 
 ---------------------------------------------------------------------------------------------------------
@@ -55,14 +54,7 @@ train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-f
 
 ```bash
 nohup python -m torch.distributed.launch --nproc_per_node=8 \
-train_librispeech.py hparams/LibriSpeech/conformer-t.yaml \
---data_folder datasets/LibriSpeech --num_epochs 100 \
---distributed_launch &
-```
-
-```bash
-nohup python -m torch.distributed.launch --nproc_per_node=8 \
-train_librispeechmix.py hparams/LibriSpeechMix/conformer-t.yaml \
+train_librispeechmix_scratch.py hparams/LibriSpeechMix/conformer-t_scratch.yaml \
 --data_folder datasets/LibriSpeechMix --num_epochs 100 \
 --distributed_launch &
 ```
