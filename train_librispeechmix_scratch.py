@@ -4,7 +4,7 @@
 
 The speaker encoder is trained from scratch.
 
-To run this recipe, do the following:
+To run this recipe:
 > python train_librispeechmix_scratch.py hparams/LibriSpeechMix/<config>_scratch.yaml
 
 Authors
@@ -15,6 +15,7 @@ Authors
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
 import itertools
+import json
 import math
 import os
 import sys
@@ -40,12 +41,14 @@ class TSASR(sb.Brain):
         tokens_bos, tokens_bos_lens = batch.tokens_bos
 
         # Extract speaker features
-        feats = self.modules.feature_extractor(enroll_sigs)
-        feats = self.modules.normalizer(feats, enroll_sigs_lens, epoch=current_epoch)
+        speaker_feats = self.modules.speaker_feature_extractor(enroll_sigs)
+        speaker_feats = self.modules.speaker_normalizer(
+            speaker_feats, enroll_sigs_lens, epoch=current_epoch
+        )
 
         # Extract speaker embedding
-        feats = self.modules.frontend(feats)
-        speaker_embs = self.modules.speaker_encoder(feats, enroll_sigs_lens)
+        speaker_feats = self.modules.speaker_frontend(speaker_feats)
+        speaker_embs = self.modules.speaker_encoder(speaker_feats, enroll_sigs_lens)
         speaker_embs = self.modules.speaker_proj(speaker_embs)
         if self.hparams.injection_mode != "cross_attention":
             # Pooling along time dimension
@@ -68,7 +71,8 @@ class TSASR(sb.Brain):
 
         # Extract features
         feats = self.modules.feature_extractor(mixed_sigs)
-        feats = self.modules.normalizer(feats, mixed_sigs_lens, epoch=current_epoch)
+        if self.hparams.normalize_input:
+            feats = self.modules.normalizer(feats, mixed_sigs_lens, epoch=current_epoch)
 
         # Add augmentation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -133,7 +137,7 @@ class TSASR(sb.Brain):
 
     def on_fit_batch_end(self, batch, outputs, loss, should_step):
         """Called after ``fit_batch()``, meant for calculating and logging metrics."""
-        if should_step:
+        if self.hparams.enable_scheduler and should_step:
             self.hparams.noam_scheduler(self.optimizer)
 
     def on_stage_start(self, stage, epoch):
@@ -378,13 +382,25 @@ if __name__ == "__main__":
         },
     )
 
+    # NOTE: the token distribution of the train set might differ from that of the validation/test
+    # set, therefore we fit the tokenizer on both train, validation, and test
+    train_valid_test = {}
+    for split in ["train", "valid", "test"]:
+        json_file = hparams[f"{split}_json"]
+        with open(json_file, encoding="utf-8") as f:
+            transcriptions = json.load(f)
+            train_valid_test.update(transcriptions)
+    train_valid_test_json = os.path.join(
+        os.path.dirname(json_file), "train_valid_test.json"
+    )
+    with open(train_valid_test_json, "w", encoding="utf-8") as f:
+        json.dump(train_valid_test, f, indent=4)
+
     # Define tokenizer
-    # NOTE: the token distribution of the train set might differ from that of the dev/test
-    # set (in this case you should fit the tokenizer on both train, dev, and test)
     tokenizer = SentencePiece(
         model_dir=hparams["save_folder"],
         vocab_size=hparams["vocab_size"],
-        annotation_train=hparams["train_json"],
+        annotation_train=train_valid_test_json,
         annotation_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=hparams["character_coverage"],

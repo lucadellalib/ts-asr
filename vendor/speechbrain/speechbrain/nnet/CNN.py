@@ -647,8 +647,14 @@ class Conv2d(nn.Module):
             )
 
         elif self.padding == "causal":
-            num_pad = (self.kernel_size[0] - 1) * self.dilation[1]
-            x = F.pad(x, (0, 0, num_pad, 0))
+            #num_pad = (self.kernel_size[0] - 1) * self.dilation[1]
+            #x = F.pad(x, (0, 0, num_pad, 0))
+            padding_time = [(self.kernel_size[-1] - 1) * self.dilation[-1], 0]
+            padding_freq = get_padding_elem(
+                self.in_channels, self.stride[-2], self.kernel_size[-2], self.dilation[-2]
+            )
+            padding = padding_time + padding_freq
+            x = F.pad(x, padding)
 
         elif self.padding == "valid":
             pass
@@ -1521,3 +1527,26 @@ def get_padding_elem_transposed(
         - 1
     )
     return int(padding)
+
+
+if __name__ == "__main__":
+    torch.manual_seed(0)
+    # Batch, Time, Freq, Channels
+    inp_tensor1 = torch.rand([10, 40, 16, 8])
+    inp_tensor2 = inp_tensor1.clone()
+    inp_tensor2[:, 1:, :, :] = torch.rand_like(inp_tensor2[:, 1:, :, :])
+    assert (inp_tensor1 != inp_tensor2).any()
+    inp_tensor3 = inp_tensor1.clone()
+    inp_tensor3[:, 1:, :, :] = torch.rand_like(inp_tensor3[:, 1:, :, :])
+    assert (inp_tensor1 != inp_tensor3).any()
+    cnn_2d = Conv2d(
+        input_shape=inp_tensor1.shape, out_channels=6, kernel_size=(7, 3), padding="causal", stride=2,
+    )
+    out_tensor1 = cnn_2d(inp_tensor1)
+    # If we randomly change all the frames from 1 on, prediction for frame 0 should not change
+    # causal => the first element of the sequence depends only on itself
+    out_tensor2 = cnn_2d(inp_tensor2)
+    out_tensor3 = cnn_2d(inp_tensor3)
+
+    assert (out_tensor1[:, 0, :, :] == out_tensor2[:, 0, :, :]).all(), "Non-causal!"
+    assert (out_tensor1[:, 0, :, :] == out_tensor3[:, 0, :, :]).all(), "Non-causal!"

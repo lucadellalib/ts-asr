@@ -65,7 +65,8 @@ def prepare_librispeechmix(
         The maximum number of target utterances to extract from each mixture.
         If a list, only the utterances at the given indices are extracted.
         If `min`, use only the shortest utterance as a target.
-        Default to all the available utterances.
+        If `max`, use only the shortest utterance as a target.
+        Default to all the available utterances (`n` for the `n`-mix case).
     num_enrolls:
         The maximum number of enrollment utterances per target speaker.
         Default to all the available enrollment utterances.
@@ -159,6 +160,10 @@ def prepare_librispeechmix(
                         min_duration = min(durations)
                         min_idx = durations.index(min_duration)
                         target_speaker_idxes = [min_idx]
+                    elif num_targets == "max":
+                        max_duration = max(durations)
+                        max_idx = durations.index(max_duration)
+                        target_speaker_idxes = [max_idx]
                     else:
                         target_speaker_idxes = list(range(len(texts)))
 

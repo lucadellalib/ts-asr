@@ -50,6 +50,11 @@ python -m torch.distributed.launch --nproc_per_node=<num-gpus-per-node> \
 train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
 ```
 
+Helper functions and scripts for plotting and interpreting the results can be found in `utils.py` and `tools`.
+
+**NOTE**: the vendored version of SpeechBrain inside this repository includes several hotfixes (e.g. distributed
+training, gradient clipping, gradient accumulation, causality) and additional features (e.g. distributed evaluation).
+
 ### Examples
 
 ```bash

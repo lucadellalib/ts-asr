@@ -1592,16 +1592,16 @@ class Brain:
             for module in self.modules.values():
                 if not hasattr(module, "require_backward_grad_sync"):
                     # if not using DDP
-                    break
+                    continue
                 old_values_list.append(module.require_backward_grad_sync)
                 module.require_backward_grad_sync = False
             yield
-            for module, old_value in zip(
-                self.modules.values(), old_values_list
-            ):
+            i = 0
+            for module in self.modules.values():
                 if not hasattr(module, "require_backward_grad_sync"):
-                    break
-                module.require_backward_grad_sync = old_value
+                    continue
+                module.require_backward_grad_sync = old_values_list[i]
+                i += 1
         else:
             yield
 

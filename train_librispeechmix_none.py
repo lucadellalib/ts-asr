@@ -4,7 +4,7 @@
 
 No speaker encoder is used.
 
-To run this recipe, do the following:
+To run this recipe:
 > python train_librispeechmix_none.py hparams/LibriSpeechMix/<config>_none.yaml
 
 Authors
@@ -15,6 +15,7 @@ Authors
 # https://github.com/speechbrain/speechbrain/blob/v0.5.15/recipes/LibriSpeech/ASR/transducer/train.py
 
 import itertools
+import json
 import math
 import os
 import sys
@@ -44,7 +45,8 @@ class TSASR(sb.Brain):
 
         # Extract features
         feats = self.modules.feature_extractor(mixed_sigs)
-        feats = self.modules.normalizer(feats, mixed_sigs_lens, epoch=current_epoch)
+        if self.hparams.normalize_input:
+            feats = self.modules.normalizer(feats, mixed_sigs_lens, epoch=current_epoch)
 
         # Add augmentation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -107,7 +109,7 @@ class TSASR(sb.Brain):
 
     def on_fit_batch_end(self, batch, outputs, loss, should_step):
         """Called after ``fit_batch()``, meant for calculating and logging metrics."""
-        if should_step:
+        if self.hparams.enable_scheduler and should_step:
             self.hparams.noam_scheduler(self.optimizer)
 
     def on_stage_start(self, stage, epoch):
@@ -125,16 +127,20 @@ class TSASR(sb.Brain):
         if stage == sb.Stage.TRAIN:
             self.train_stats = stage_stats
         elif (
-            (stage == sb.Stage.VALID and current_epoch % self.hparams.valid_search_freq == 0)
-            or stage == sb.Stage.TEST
-        ):
+            stage == sb.Stage.VALID
+            and current_epoch % self.hparams.valid_search_freq == 0
+        ) or stage == sb.Stage.TEST:
             if self.distributed_launch:
                 # Blocking, no explicit synchronization required
                 world_size = int(os.environ["WORLD_SIZE"])
                 all_cer_scores = [None for _ in range(world_size)]
                 all_wer_scores = [None for _ in range(world_size)]
-                torch.distributed.all_gather_object(all_cer_scores, self.cer_metric.scores)
-                torch.distributed.all_gather_object(all_wer_scores, self.wer_metric.scores)
+                torch.distributed.all_gather_object(
+                    all_cer_scores, self.cer_metric.scores
+                )
+                torch.distributed.all_gather_object(
+                    all_wer_scores, self.wer_metric.scores
+                )
                 self.cer_metric.scores = list(itertools.chain(*all_cer_scores))
                 self.wer_metric.scores = list(itertools.chain(*all_wer_scores))
             stage_stats["CER"] = self.cer_metric.summarize("error_rate")
@@ -291,8 +297,7 @@ def dataio_prepare(hparams, tokenizer):
 
     # 4. Set output
     sb.dataio.dataset.set_output_keys(
-        datasets,
-        ["id", "mixed_sig", "tokens_bos", "tokens", "target_words"],
+        datasets, ["id", "mixed_sig", "tokens_bos", "tokens", "target_words"],
     )
 
     return train_data, valid_data, test_data
@@ -325,20 +330,32 @@ if __name__ == "__main__":
             "save_folder": hparams["save_folder"],
             "splits": hparams["splits"],
             "num_targets": hparams["num_targets"],
-            "num_enrolls": hparams["num_enrolls"],
+            "num_enrolls": 1,
             "trim_nontarget": hparams["trim_nontarget"],
             "suppress_delay": hparams["suppress_delay"],
             "overlap_ratio": hparams["overlap_ratio"],
         },
     )
 
+    # NOTE: the token distribution of the train set might differ from that of the validation/test
+    # set, therefore we fit the tokenizer on both train, validation, and test
+    train_valid_test = {}
+    for split in ["train", "valid", "test"]:
+        json_file = hparams[f"{split}_json"]
+        with open(json_file, encoding="utf-8") as f:
+            transcriptions = json.load(f)
+            train_valid_test.update(transcriptions)
+    train_valid_test_json = os.path.join(
+        os.path.dirname(json_file), "train_valid_test.json"
+    )
+    with open(train_valid_test_json, "w", encoding="utf-8") as f:
+        json.dump(train_valid_test, f, indent=4)
+
     # Define tokenizer
-    # NOTE: the token distribution of the train set might differ from that of the dev/test
-    # set (in this case you should fit the tokenizer on both train, dev, and test)
     tokenizer = SentencePiece(
         model_dir=hparams["save_folder"],
         vocab_size=hparams["vocab_size"],
-        annotation_train=hparams["train_json"],
+        annotation_train=train_valid_test_json,
         annotation_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=hparams["character_coverage"],
@@ -413,7 +430,7 @@ if __name__ == "__main__":
                 "save_folder": hparams["save_folder"],
                 "splits": [split],
                 "num_targets": hparams["num_targets"],
-                "num_enrolls": hparams["num_enrolls"],
+                "num_enrolls": 1,
                 "trim_nontarget": hparams["trim_nontarget"],
                 "suppress_delay": hparams["suppress_delay"],
                 "overlap_ratio": hparams["overlap_ratio"],

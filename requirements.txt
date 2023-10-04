@@ -1,2 +1,1 @@
-matplotlib>=3.6.2
 transformers>=4.32.0

@@ -264,3 +264,34 @@ class ConvBlock(torch.nn.Module):
             out = out + self.reduce_conv(x)
             out = self.drop(out)
         return out
+
+
+if __name__ == "__main__":
+    torch.manual_seed(0)
+    # Batch, Time, Freq, Channels
+    inp_tensor1 = torch.rand([10, 40, 16, 8])
+    inp_tensor2 = inp_tensor1.clone()
+    inp_tensor2[:, 1:, :, :] = torch.rand_like(inp_tensor2[:, 1:, :, :])
+    assert (inp_tensor1 != inp_tensor2).any()
+    inp_tensor3 = inp_tensor1.clone()
+    inp_tensor3[:, 1:, :, :] = torch.rand_like(inp_tensor3[:, 1:, :, :])
+    assert (inp_tensor1 != inp_tensor3).any()
+    cnn_frontend = ConvolutionFrontEnd(
+        input_shape=inp_tensor1.shape,
+        num_blocks=2,
+        num_layers_per_block=1,
+        out_channels=(128, 128),
+        kernel_sizes=(3, 3),
+        strides=(2, 2),
+        residuals=(True, True),
+        padding="causal",
+        dropout=0.0,
+    )
+    out_tensor1 = cnn_frontend(inp_tensor1)
+    # If we randomly change all the frames from 1 on, prediction for frame 0 should not change
+    # causal => the first element of the sequence depends only on itself
+    out_tensor2 = cnn_frontend(inp_tensor2)
+    out_tensor3 = cnn_frontend(inp_tensor3)
+
+    assert (out_tensor1[:, 0, :, :] == out_tensor2[:, 0, :, :]).all(), "Non-causal!"
+    assert (out_tensor1[:, 0, :, :] == out_tensor3[:, 0, :, :]).all(), "Non-causal!"

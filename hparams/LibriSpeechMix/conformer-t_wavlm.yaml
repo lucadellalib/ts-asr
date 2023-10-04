@@ -14,16 +14,16 @@ __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Data preparation
 data_folder: !PLACEHOLDER
-splits: [train-2mix, dev-clean-2mix, test-clean-2mix]
-test_splits: [test-clean-2mix]
+splits: [train-2mix, dev-clean-2mix, test-clean-2mix]  # We need to provide at least 1 test split as a placeholder
+test_splits: [test-clean-2mix]  # The real test splits on which the trained model is tested are defined here
 train_json: !ref <save_folder>/train.json
 valid_json: !ref <save_folder>/dev.json
 test_json: !ref <save_folder>/test.json
 num_targets: null
-num_enrolls: 1  # Must be <= 2, as in the public dev/test set
-trim_nontarget: null
-suppress_delay: null  # Set delay to 0 to maximize overlap
-overlap_ratio: null
+num_enrolls: 1  # Recommended <= 2, as in the public dev/test set
+trim_nontarget: null  # 0 (seconds) to discard everything before and after the target utterance (> 0 to leave some margin)
+suppress_delay: null  # True to set delays to 0 in order to maximize the overlap
+overlap_ratio: null  # If set, delays are overridden in order to obtain the specified overlap ratio
 
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>
@@ -33,7 +33,7 @@ save_folder: !ref <output_folder>/save
 train_remove_if_longer: 60.0  # Seconds
 valid_remove_if_longer: 60.0  # Seconds
 test_remove_if_longer: 60.0  # Seconds
-trim_enroll: 20.0  # Must be >= 0.325, the minimum allowed by WavLM
+trim_enroll: 20.0  # Seconds, must be >= 0.325, the minimum allowed by WavLM
 gain_nontarget: 0  # With respect to the power of the target signal (< 0 => larger target speaker SIR)
 sample_rate: 16000
 sorting: ascending
@@ -58,7 +58,7 @@ num_buckets: 80
 max_batch_size: 128
 dataloader_workers: 8
 
-vocab_size: 29  # If token_type=char, must be set equal to the number of found characters
+vocab_size: 29  # NOTE: if token_type=char, must be set equal to the number of found characters
 token_type: char  # ["unigram", "bpe", "char"]
 character_coverage: 1.0
 blank_index: 0  # Index(blank/bos/eos/pad/unk) = 0
@@ -66,6 +66,7 @@ blank_index: 0  # Index(blank/bos/eos/pad/unk) = 0
 lr: 0.001
 weight_decay: 0.01
 warmup_steps: 10000
+enable_scheduler: True
 
 nonfinite_patience: 10
 max_grad_norm: 5.0
@@ -80,10 +81,12 @@ nhead: 4
 encoder_num_layers: 12
 d_ffn: 2048
 kernel_size: 31
-causal: False
-padding: same  # Set to causal if `causal` is True
 injection_mode: cat
 injection_after: 0
+# NOTE: the following parameters must be changed to switch from non-causal (default) to causal
+normalize_input: True
+causal_encoder: False
+frontend_padding: same  # ["same", "causal"]
 
 #embedding_dim: 128
 decoder_neurons: 512
@@ -140,7 +143,8 @@ frontend: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
     kernel_sizes: (3, 3)
     strides: (2, 2)
     residuals: (True, True)
-    padding: !ref <padding>
+    dropout: !ref <dropout>
+    padding: !ref <frontend_padding>
 
 encoder: !new:models.conformer.ConformerEncoder
     input_size: 2560
@@ -150,10 +154,8 @@ encoder: !new:models.conformer.ConformerEncoder
     d_ffn: !ref <d_ffn>
     dropout: !ref <dropout>
     activation: !name:torch.nn.LeakyReLU
-    positional_encoding: fixed_abs_sine
-    normalize_before: True
-    attention_type: RelPosMHAXL
-    causal: !ref <causal>
+    kernel_size: !ref <kernel_size>
+    causal: !ref <causal_encoder>
     injection_mode: !ref <injection_mode>
     injection_after: !ref <injection_after>
 

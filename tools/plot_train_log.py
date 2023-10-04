@@ -2,8 +2,8 @@
 
 """Plot SpeechBrain train log.
 
-To run this script, do the following:
-> python plot_train_log.py train_log.txt
+To run this script (requires Matplotlib installed):
+> python plot_train_log.py <path-to-train_log>
 
 Authors
  * Luca Della Libera 2023
@@ -15,8 +15,13 @@ from collections import defaultdict
 from typing import Dict, Tuple
 
 import numpy as np
-from matplotlib import pyplot as plt, rc
 from numpy import ndarray
+
+
+try:
+    from matplotlib import pyplot as plt, rc
+except ImportError:
+    raise ImportError("This script requires Matplotlib (`pip install matplotlib`)")
 
 
 __all__ = [

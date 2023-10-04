@@ -18,7 +18,6 @@ from speechbrain.lobes.models.transformer.Transformer import (
     RelPosEncXL,
     get_lookahead_mask,
 )
-from speechbrain.nnet.activations import Swish
 from speechbrain.nnet.attention import MultiheadAttention
 from speechbrain.nnet.normalization import LayerNorm
 from speechbrain.nnet.containers import ModuleList
@@ -30,7 +29,8 @@ __all__ = ["ConformerEncoder"]
 
 
 class ConformerEncoder(nn.Module):
-    """Conformer encoder model.
+    """Conformer encoder model that additionally supports
+    the injection of speaker embeddings.
 
     Arguments
     ---------
@@ -41,7 +41,7 @@ class ConformerEncoder(nn.Module):
     nhead : int, optional
         The number of heads in the multi-head attention models.
     num_layers : int, optional
-        The number of encoder layers.
+        The number of layers.
     d_ffn : int, optional
         The dimension of the feed forward network model.
     dropout : int, optional
@@ -50,27 +50,27 @@ class ConformerEncoder(nn.Module):
         The activation function of FFN layers.
         Recommended: ReLU or GELU.
     positional_encoding : str, optional
-        Type of positional encoding used. e.g. 'fixed_abs_sine'
+        Type of positional encoding used. e.g. "fixed_abs_sine"
         for fixed absolute positional encodings.
-    normalize_before : bool, optional
-        Whether normalization should be applied before or after MHA or FFN in Transformer layers.
-        Defaults to True as this was shown to lead to better performance and training stability.
     kernel_size : int, optional
-        Kernel size in the convolutional layers when Conformer is used.
+        Kernel size in the convolutional layers.
     bias : bool, optional
-        Whether to use bias in Conformer convolutional layers.
-    conformer_activation : torch.nn.Module, optional
-        Activation module used after Conformer convolutional layers e.g. Swish, ReLU etc.
+        Whether to use bias in convolutional layers.
     attention_type : str, optional
-        Type of attention layer used in all Transformer or Conformer layers.
+        Type of attention layer used in all Conformer layers.
         e.g. regularMHA or RelPosMHA.
     max_length : int, optional
         Max length for the source sequence in input.
         Used for positional encodings.
     causal : bool, optional
-        Whether the encoder should be causal.
+        Whether the model should be causal.
     injection_mode : str, optional
-        The embedding injection mode (prod, sum, cat, cross_attention, or None).
+        The speaker embedding injection mode ("prod", "sum", "cat", "cross_attention", or None).
+    injection_after : int or list, optional
+        Inject the speaker embedding after the `injection_after`-th layer.
+        If -1, inject the speaker embedding before the first layer.
+        If a list, inject the speaker embedding after the `i`-th layer,
+        for each `i` in `injection_after`.
 
     Example
     -------
@@ -97,13 +97,11 @@ class ConformerEncoder(nn.Module):
         dropout=0.0,
         activation=nn.ReLU,
         positional_encoding="fixed_abs_sine",
-        normalize_before=True,
-        kernel_size: "Optional[int]" = 31,
-        bias: "Optional[bool]" = True,
-        conformer_activation: "Optional[nn.Module]" = Swish,
-        attention_type: "Optional[str]" = "regularMHA",
-        max_length: "Optional[int]" = 2500,
-        causal: "Optional[bool]" = False,
+        kernel_size=31,
+        bias=True,
+        attention_type="RelPosMHAXL",
+        max_length=2500,
+        causal=False,
         injection_mode: "Optional[str]" = "prod",
         injection_after: "Union[int, List[int]]" = 0,
     ):
@@ -116,10 +114,8 @@ class ConformerEncoder(nn.Module):
         self.dropout = dropout
         self.activation = activation
         self.positional_encoding_type = positional_encoding_type = positional_encoding
-        self.normalize_before = normalize_before
         self.kernel_size = kernel_size
         self.bias = bias
-        self.conformer_activation = conformer_activation
         self.attention_type = attention_type
         self.max_length = max_length
         self.causal = causal
@@ -183,7 +179,7 @@ class ConformerEncoder(nn.Module):
         speaker_embs : torch.Tensor, optional
             The speaker embedding.
         speaker_embs_length : torch.Tensor, optional
-            The speaker embedding length (used only if `injection_mode` == "cross_attention").
+            The speaker embedding length (used only if `injection_mode` = "cross_attention").
 
         Returns
         -------
@@ -200,6 +196,11 @@ class ConformerEncoder(nn.Module):
         src_key_padding_mask, src_mask = self._make_masks(src, wav_len)
         src = self.custom_src_module(src)
 
+        # Inject speaker embedding after the specified layer(s)
+        if -1 in self.injection_after:
+            if speaker_embs is not None:
+                src = self._inject_speaker_emb(src, speaker_embs, speaker_embs_length)
+
         # Add positional encoding to queries if are sinusoidal
         if self.attention_type == "RelPosMHAXL":
             pos_embs = self.positional_encoding(src)
@@ -208,44 +209,45 @@ class ConformerEncoder(nn.Module):
             src += self.positional_encoding(src)  # Add the encodings here
 
         for i, layer in enumerate(self.layers):
-            src, _ = layer(
+            src, attn_weights = layer(
                 src,
                 src_mask=src_mask,
                 src_key_padding_mask=src_key_padding_mask,
                 pos_embs=pos_embs,
             )
 
-            # Inject speaker embedding
+            # Inject speaker embedding after the specified layer(s)
             if i in self.injection_after:
                 if speaker_embs is not None:
-                    if self.injection_mode == "prod":
-                        src *= speaker_embs
-                    elif self.injection_mode == "sum":
-                        src += speaker_embs
-                    elif self.injection_mode == "cat":
-                        src = torch.cat(
-                            [src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1
-                        )
-                        src = self.cat_proj(src)
-                    elif self.injection_mode == "cross_attention":
-                        key_padding_mask = None
-                        if speaker_embs_length is not None:
-                            key_padding_mask = ~length_to_mask(
-                                (speaker_embs_length * speaker_embs.shape[-2]).round()
-                            ).bool()
-                        src, _ = self.speaker_attn(
-                            src,
-                            speaker_embs,
-                            speaker_embs,
-                            key_padding_mask=key_padding_mask,
-                        )
-                    elif self.injection_mode is None:
-                        pass
-                    else:
-                        raise NotImplementedError
+                    src = self._inject_speaker_emb(
+                        src, speaker_embs, speaker_embs_length
+                    )
 
         src = self.norm(src)
         return src
+
+    def _inject_speaker_emb(self, src, speaker_embs, speaker_embs_length):
+        if self.injection_mode == "prod":
+            return src * speaker_embs
+        elif self.injection_mode == "sum":
+            return src + speaker_embs
+        elif self.injection_mode == "cat":
+            src = torch.cat([src, speaker_embs.expand(-1, src.shape[-2], -1)], dim=-1)
+            return self.cat_proj(src)
+        elif self.injection_mode == "cross_attention":
+            key_padding_mask = None
+            if speaker_embs_length is not None:
+                key_padding_mask = ~length_to_mask(
+                    (speaker_embs_length * speaker_embs.shape[-2]).round()
+                ).bool()  # True for masked tokens
+            src, _ = self.speaker_attn(
+                src, speaker_embs, speaker_embs, key_padding_mask=key_padding_mask,
+            )
+            return src
+        elif self.injection_mode is None:
+            return src
+        else:
+            raise NotImplementedError
 
     def _make_masks(self, src, wav_len=None):
         if wav_len is not None:

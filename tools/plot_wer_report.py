@@ -2,8 +2,8 @@
 
 """Plot SpeechBrain WER report against data statistics from a manifest file.
 
-To run this script, do the following:
-> python plot_wer_report.py wer.txt
+To run this script (requires Matplotlib installed):
+> python plot_wer_report.py <path-to-wer-file>
 
 Authors
  * Luca Della Libera 2023
@@ -16,7 +16,11 @@ import re
 from collections import defaultdict
 from typing import Dict, Tuple
 
-from matplotlib import pyplot as plt, rc
+
+try:
+    from matplotlib import pyplot as plt, rc
+except ImportError:
+    raise ImportError("This script requires Matplotlib (`pip install matplotlib`)")
 
 
 __all__ = [
