@@ -170,6 +170,13 @@ class TSASR(sb.Brain):
                 )
                 self.cer_metric.scores = list(itertools.chain(*all_cer_scores))
                 self.wer_metric.scores = list(itertools.chain(*all_wer_scores))
+                # Remove duplicates introduced by DDP when the dataset size is not divisible by WORLD_SIZE
+                self.cer_metric.scores = list(
+                    {x["key"]: x for x in self.cer_metric.scores}.values()
+                )
+                self.wer_metric.scores = list(
+                    {x["key"]: x for x in self.wer_metric.scores}.values()
+                )
             stage_stats["CER"] = self.cer_metric.summarize("error_rate")
             stage_stats["WER"] = self.wer_metric.summarize("error_rate")
 

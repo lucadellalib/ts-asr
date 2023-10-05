@@ -14,16 +14,16 @@ __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Data preparation
 data_folder: !PLACEHOLDER
-splits: [dev-clean-2mix]  # We need to provide at least 1 test split as a placeholder
-test_splits: [dev-clean-2mix]  # The real test splits on which the trained model is tested are defined here
-train_json: !ref <save_folder>/dev.json
+splits: [train-2mix, dev-clean-2mix, test-clean-2mix]  # We need to provide at least 1 test split as a placeholder
+test_splits: [test-clean-2mix]  # The real test splits on which the trained model is tested are defined here
+train_json: !ref <save_folder>/train.json
 valid_json: !ref <save_folder>/dev.json
-test_json: !ref <save_folder>/dev.json
+test_json: !ref <save_folder>/test.json
 num_targets: null
 num_enrolls: 1  # Recommended <= 2, as in the public dev/test set
 trim_nontarget: null  # 0 (seconds) to discard everything before and after the target utterance (> 0 to leave some margin)
 suppress_delay: null  # True to set delays to 0 in order to maximize the overlap
-overlap_ratio: null  # If set, delays are overridden in order to obtain the specified overlap ratio
+overlap_ratio: null  # If set, delays are overridden in order to obtain the specified overlap ratio (with respect to the target utterance)
 
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>
@@ -78,7 +78,7 @@ keep_checkpoints: 10
 dropout: 0.1
 d_model: 256
 nhead: 4
-encoder_num_layers: 12
+encoder_num_layers: 16
 d_ffn: 2048
 kernel_size: 31
 injection_mode: cat
@@ -96,7 +96,7 @@ joint_dim: 640
 
 # Decoding parameters
 valid_search_freq: 1
-beam_size: 20
+beam_size: 29
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
 expand_beam: 2.3

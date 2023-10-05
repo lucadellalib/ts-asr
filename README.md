@@ -32,14 +32,14 @@ pip install -r requirements.txt
 Navigate to `<path-to-repository>`, open a terminal and run:
 
 ```bash
-python train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder>
+python train_<dataset>_<variant>.py hparams/<dataset>/<config>.yaml --data_folder <path-to-data-folder>
 ```
 
 To use multiple GPUs on the same node, run:
 
 ```bash
 python -m torch.distributed.launch --nproc_per_node=<num-gpus> \
-train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
+train_<dataset>_<variant>.py hparams/<dataset>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
 ```
 
 To use multiple GPUs on multiple nodes, for each node with rank `0, ..., <num-nodes> - 1` run:
@@ -47,13 +47,13 @@ To use multiple GPUs on multiple nodes, for each node with rank `0, ..., <num-no
 ```bash
 python -m torch.distributed.launch --nproc_per_node=<num-gpus-per-node> \
 --nnodes=<num-nodes> --node_rank=<node-rank> --master_addr <rank-0-ip-addr> --master_port 5555 \
-train_<variant>.py hparams/<variant>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
+train_<dataset>_<variant>.py hparams/<dataset>/<config>.yaml --data_folder <path-to-data-folder> --distributed_launch
 ```
 
-Helper functions and scripts for plotting and interpreting the results can be found in `utils.py` and `tools`.
+Helper functions and scripts for plotting and analyzing the results can be found in `utils.py` and `tools`.
 
-**NOTE**: the vendored version of SpeechBrain inside this repository includes several hotfixes (e.g. distributed
-training, gradient clipping, gradient accumulation, causality) and additional features (e.g. distributed evaluation).
+**NOTE**: the vendored version of SpeechBrain inside this repository includes several hotfixes (e.g. distributed training,
+gradient clipping, gradient accumulation, causality, etc.) and additional features (e.g. distributed evaluation).
 
 ### Examples
 

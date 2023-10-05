@@ -1,1 +1,3 @@
+matplotlib
+scikit-learn
 transformers>=4.32.0

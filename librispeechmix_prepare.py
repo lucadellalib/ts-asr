@@ -23,9 +23,6 @@ logging.basicConfig(
 _LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_SPLITS = (
-    "train-1mix",
-    "train-2mix",
-    "train-3mix",
     "dev-clean-1mix",
     "dev-clean-2mix",
     "dev-clean-3mix",
@@ -55,7 +52,7 @@ def prepare_librispeechmix(
         LibriSpeech folders + the LibriSpeechMix JSONL annotation files).
     save_folder:
         The path to the folder where the data manifest JSON files will be stored.
-        Default to ``data_folder``.
+        Default to `data_folder`.
     splits:
         The dataset splits to load.
         Splits with the same prefix are merged into a single JSON file
@@ -79,7 +76,7 @@ def prepare_librispeechmix(
         Must be None if `overlap_ratio` is set.
         Default to False.
     overlap_ratio:
-        The overlap ratio for the target utterance.
+        The overlap ratio with respect to the target utterance.
         The target utterance delay is always set to 0, which implies
         that a new mixture is created for each target utterance.
         Must be None if `suppress_delay` is set.
@@ -96,7 +93,7 @@ def prepare_librispeechmix(
     --------
     >>> prepare_librispeechmix(
     ...     "LibriSpeechMix",
-    ...     splits=["train-2mix", "dev-clean-2mix", "test-clean-2mix"]
+    ...     splits=["dev-clean-2mix", "test-clean-2mix"],
     ... )
 
     """

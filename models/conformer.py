@@ -166,7 +166,14 @@ class ConformerEncoder(nn.Module):
         # Reset parameters using xavier_normal_
         self._init_params()
 
-    def forward(self, src, wav_len=None, speaker_embs=None, speaker_embs_length=None):
+    def forward(
+        self,
+        src,
+        wav_len=None,
+        speaker_embs=None,
+        speaker_embs_length=None,
+        return_attn=False,
+    ):
         """Forward pass.
 
         Arguments
@@ -180,11 +187,15 @@ class ConformerEncoder(nn.Module):
             The speaker embedding.
         speaker_embs_length : torch.Tensor, optional
             The speaker embedding length (used only if `injection_mode` = "cross_attention").
+        return_attn : bool, optional
+            True to additionally return the attention weights, False otherwise.
 
         Returns
         -------
         torch.Tensor
             The output.
+        list[torch.Tensor]
+            If `return_attn=True`, the attention weights.
 
         """
         # Reshape the src vector to [Batch, Time, Features]
@@ -208,13 +219,16 @@ class ConformerEncoder(nn.Module):
             pos_embs = None
             src += self.positional_encoding(src)  # Add the encodings here
 
+        attns = []
         for i, layer in enumerate(self.layers):
-            src, attn_weights = layer(
+            src, attn = layer(
                 src,
                 src_mask=src_mask,
                 src_key_padding_mask=src_key_padding_mask,
                 pos_embs=pos_embs,
             )
+            if return_attn:
+                attns.append(attn.detach())
 
             # Inject speaker embedding after the specified layer(s)
             if i in self.injection_after:
@@ -224,6 +238,10 @@ class ConformerEncoder(nn.Module):
                     )
 
         src = self.norm(src)
+
+        if return_attn:
+            return src, attns
+
         return src
 
     def _inject_speaker_emb(self, src, speaker_embs, speaker_embs_length):

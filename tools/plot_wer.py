@@ -1,9 +1,9 @@
 #!/usr/bin/env/python
 
-"""Plot SpeechBrain WER report against data statistics from a manifest file.
+"""Plot WER report.
 
 To run this script (requires Matplotlib installed):
-> python plot_wer_report.py <path-to-wer-file>
+> python plot_wer.py <path-to-wer-report.txt>
 
 Authors
  * Luca Della Libera 2023
@@ -14,7 +14,7 @@ import json
 import os
 import re
 from collections import defaultdict
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 
 try:
@@ -23,53 +23,16 @@ except ImportError:
     raise ImportError("This script requires Matplotlib (`pip install matplotlib`)")
 
 
-__all__ = [
-    "parse_data_manifest",
-    "parse_wer_report",
-]
-
-
-def parse_wer_report(wer_report: "str") -> "Dict[str, float]":
-    """Parse WER report to extract utterance IDs and corresponding WER values.
-
-    Arguments
-    ---------
-    wer_report:
-        The path to the WER report file.
-
-    Returns
-    -------
-        The WERs, i.e. a dict that maps utterance IDs
-        to the corresponding WER values.
-
-    Examples
-    --------
-    >>> wers = parse_wer_report("wer_test-clean-2mix.txt")
-
-    """
-    wers = {}
-    with open(wer_report) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            tokens = line.split(",", 1)
-            if len(tokens) != 2:
-                continue
-            utterance_id, tail = tokens
-            if not tail.endswith("]"):
-                continue
-            pattern = r"%WER\s+(\d+\.\d+)"
-            match = re.search(pattern, tail)
-            if not match:
-                continue
-            wer = float(match.group(1))
-            wers[utterance_id] = wer
-    return wers
-
-
 def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
-    """Parse data manifest to extract utterance IDs and corresponding feature values.
+    """Parse data JSON manifest to extract utterance IDs and
+    corresponding feature values.
+
+    The following features are available:
+    - "duration"
+    - "target_duration"
+    - "interference_duration"
+    - "overlap_ratio_target"
+    - "overlap_ratio_mixture"
 
     Arguments
     ---------
@@ -78,8 +41,8 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
 
     Returns
     -------
-        The features, i.e. a dict that maps utterance IDs
-        to the corresponding feature values.
+        The features, i.e. a dict that maps utterance
+        IDs to the corresponding feature values.
 
     Examples
     --------
@@ -103,7 +66,7 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
         # genders = datum["genders"]
 
         # Duration
-        features[utterance_id]["Duration (s)"] = duration
+        features[utterance_id]["duration"] = duration
 
         # Target duration
         target_start = delays[target_speaker_idx]
@@ -111,7 +74,7 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
         target_start = max(target_start, start)
         target_end = min(target_end, start + duration)
         target_duration = target_end - target_start
-        features[utterance_id]["Target duration (s)"] = target_duration
+        features[utterance_id]["target_duration"] = target_duration
 
         # Interference duration
         interference_endpoints = []
@@ -137,9 +100,9 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
                 interference_segments.append((interference_start, interference_end))
         interference_durations = [x[1] - x[0] for x in interference_segments]
         interference_duration = sum(interference_durations)
-        features[utterance_id]["Interference duration (s)"] = interference_duration
+        features[utterance_id]["interference_duration"] = interference_duration
 
-        # Overlap ratio
+        # Overlap ratio with respect to the target
         interference_segments_within_target = []
         for interference_segment in interference_segments:
             interference_segment_within_target = (
@@ -159,18 +122,77 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
             x[1] - x[0] for x in interference_segments_within_target
         ]
         interference_duration_within_target = sum(interference_durations_within_target)
-        overlap_ratio = (interference_duration_within_target / target_duration) * 100
-        features[utterance_id]["Overlap ratio (%)"] = overlap_ratio
+        overlap_ratio_target = (
+            interference_duration_within_target / target_duration
+        ) * 100
+        features[utterance_id]["overlap_ratio_target"] = overlap_ratio_target
+
+        # Overlap ratio with respect to the mixture
+        mixture_duration = max(x + y for x, y in zip(durations, delays))
+        overlap_ratio_mixture = (
+            interference_duration_within_target / mixture_duration
+        ) * 100
+        features[utterance_id]["overlap_ratio_mixture"] = overlap_ratio_mixture
 
     return features
 
 
+def parse_wer_report(
+    wer_report: "str",
+) -> "Dict[str, Tuple[float, float, float, float]]":
+    """Parse WER report to extract utterance IDs and
+    corresponding WER values.
+
+    Arguments
+    ---------
+    wer_report:
+        The path to the WER report file.
+
+    Returns
+    -------
+        The WERs, i.e. a dict that maps utterance IDs
+        to the corresponding WER, insertion, deletion,
+        substitution values (relative).
+
+    Examples
+    --------
+    >>> wers = parse_wer_report("wer_test-clean-2mix.txt")
+
+    """
+    wers = {}
+    with open(wer_report) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            tokens = line.split(",", 1)
+            if len(tokens) != 2:
+                continue
+            utterance_id, tail = tokens
+            if not tail.endswith("]"):
+                continue
+            pattern = (
+                " %WER (\d+\.\d+) \[ (\d+) \/ (\d+), (\d+) ins, (\d+) del, (\d+) sub\ ]"
+            )
+            match = re.search(pattern, tail)
+            if not match:
+                continue
+            wer = float(match.group(1))
+            total = float(match.group(3))
+            insertions = float(match.group(4)) / total
+            deletions = float(match.group(5)) / total
+            substitutions = float(match.group(6)) / total
+            wers[utterance_id] = wer, insertions, deletions, substitutions
+    return wers
+
+
 def plot_wers(
-    wers: "Dict[str, float]",
-    features: "Dict[str, float]",
+    wers: "Dict[str, Tuple[float, float, float, float]]",
     output_image: "str",
-    xlabel,
-    title: "str" = "",
+    features: "Optional[Dict[str, float]]" = None,
+    xlabel: "Optional[str]" = None,
+    ylabel: "Optional[str]" = None,
+    title: "Optional[str]" = None,
     figsize: "Tuple[float, float]" = (8.0, 4.0),
     usetex: "bool" = False,
     style_file_or_name: "str" = "classic",
@@ -181,14 +203,19 @@ def plot_wers(
     ---------
     wers:
         The WERs, i.e. a dict that maps utterance IDs
-        to the corresponding WER values.
+        to the corresponding WER, insertion, deletion,
+        substitution values (relative).
+    output_image:
+        The path to the output image.
     features:
         The features, i.e. a dict that maps utterance IDs
         to the corresponding feature values.
-    output_image:
-        The path to the output image.
+        If provided, a scatter plot is produced.
+        Otherwise, a histogram is produced.
     xlabel:
         The x-axis label.
+    ylabel:
+        The y-axis label.
     title:
         The title.
     figsize:
@@ -196,52 +223,71 @@ def plot_wers(
     usetex:
         True to render text with LaTeX, False otherwise.
     style_file_or_name:
-        The path to a Matplotlib style file or the name of one
-        of Matplotlib built-in styles
+        The path to a Matplotlib style file or the name of one of Matplotlib built-in styles
         (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
 
     Examples
     --------
     >>> wers = parse_wer_report("wer_test-clean-2mix.txt")
-    >>> plot_wers(wers, features, "wer_test-clean-2mix.png")
+    >>> plot_wers(wers, "wer_test-clean-2mix.png")
 
     """
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
     with plt.style.context(style_file_or_name):
-        rc("text", usetex=usetex)
-        fig = plt.figure(figsize=figsize)
+        # Customize style
+        if usetex:
+            rc("text", usetex=usetex)
+            rc("font", family="serif", serif=["Computer Modern"])
+
+        plt.figure(figsize=figsize)
         utterance_ids = list(wers.keys())
         wers = [wers[x] for x in utterance_ids]
-        features = [features[x] for x in utterance_ids]
-        plt.scatter(features, wers)
+        wers, insertions, deletions, substitutions = zip(*wers)
+        if features is None:
+            plt.hist(wers, histtype="step", label="Error")
+            plt.hist(insertions, histtype="step", label="Insertion")
+            plt.hist(deletions, histtype="step", label="Deletion")
+            plt.hist(substitutions, histtype="step", label="Substitution")
+        else:
+            features = [features[x] for x in utterance_ids]
+            plt.scatter(features, wers, label="Error")
+            plt.scatter(features, insertions, label="Insertion", c="green", marker="d")
+            plt.scatter(features, deletions, label="Deletion", c="red", marker="^")
+            plt.scatter(
+                features, substitutions, label="Substitution", c="cyan", marker="x"
+            )
         plt.grid()
-        plt.title(title)
-        plt.xlabel(xlabel)
+        if xlabel:
+            plt.xlabel(xlabel)
+        if ylabel:
+            plt.ylabel(ylabel)
+        if title:
+            plt.title(title)
+        else:
+            plt.title(f"{len(wers)} samples")
+        plt.legend(scatterpoints=2, fancybox=True)
         # xmin, xmax = plt.xlim()
         # xrange = xmax - xmin
         # plt.xlim(xmin - 0.025 * xrange, xmax + 0.025 * xrange)
-        plt.ylabel("WER (%)")
         # ymin, ymax = plt.ylim()
         # yrange = ymax - ymin
-        # plt.ylim(-0.1)
-        fig.tight_layout()
+        # plt.ylim(ymin - 0.025 * yrange, ymax + 0.025 * yrange)
+        plt.tight_layout()
         plt.savefig(output_image, bbox_inches="tight")
         plt.close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Plot WER report against data statistics from a manifest file"
-    )
+    parser = argparse.ArgumentParser(description="Plot WER report")
     parser.add_argument(
         "wer_report", help="path to WER report",
     )
     parser.add_argument(
-        "data_manifest", help="path to data manifest",
+        "-d", "--data_manifest", help="path to data manifest",
     )
     parser.add_argument(
-        "feature", help="feature to plot along the x-axis",
+        "--feature", help="feature to plot along the x-axis",
     )
     parser.add_argument(
         "-o", "--output_image", help="path to output image",
@@ -250,10 +296,13 @@ if __name__ == "__main__":
         "-x", "--xlabel", help="x-axis label",
     )
     parser.add_argument(
+        "-y", "--ylabel", help="y-axis label",
+    )
+    parser.add_argument(
         "-t", "--title", help="title",
     )
     parser.add_argument(
-        "-f", "--figsize", nargs=2, default=(8.0, 4.0), help="figure size",
+        "-f", "--figsize", nargs=2, default=(6.0, 6.0), help="figure size",
     )
     parser.add_argument(
         "-u", "--usetex", action="store_true", help="render text with LaTeX",
@@ -267,19 +316,31 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     wers = parse_wer_report(args.wer_report)
-    features = parse_data_manifest(args.data_manifest)
-    feature = args.feature
-    output_image = (
-        args.output_image
-        or args.wer_report.replace(".txt", "") + f"_{feature}" + ".png"
-    )
-    xlabel = args.xlabel or feature
-    title = args.title or args.wer_report
+    if args.data_manifest:
+        features = parse_data_manifest(args.data_manifest)
+        feature = args.feature
+        features = {x: features[x][feature] for x in features}
+        output_image = (
+            args.output_image
+            or args.wer_report.replace(".txt", "") + f"_wer_vs_{feature}" + ".png"
+        )
+        xlabel = args.xlabel or feature
+        ylabel = args.xlabel or "Rate (%)"
+    else:
+        features = None
+        output_image = (
+            args.output_image or args.wer_report.replace(".json", "") + ".png"
+        )
+        xlabel = args.xlabel or "Rate (%)"
+        ylabel = args.ylabel or "Count"
+
+    title = args.title
     plot_wers(
         wers,
-        {x: features[x][feature] for x in features},
         output_image,
+        features,
         xlabel,
+        ylabel,
         title,
         args.figsize,
         args.usetex,

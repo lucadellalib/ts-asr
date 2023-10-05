@@ -22,7 +22,7 @@ test_json: !ref <save_folder>/test.json
 num_targets: null
 trim_nontarget: null  # 0 (seconds) to discard everything before and after the target utterance (> 0 to leave some margin)
 suppress_delay: null  # True to set delays to 0 in order to maximize the overlap
-overlap_ratio: null  # If set, delays are overridden in order to obtain the specified overlap ratio
+overlap_ratio: null  # If set, delays are overridden in order to obtain the specified overlap ratio (with respect to the target utterance)
 
 # Output directories
 output_folder: !ref results/<experiment_name>/<seed>
@@ -76,7 +76,7 @@ keep_checkpoints: 10
 dropout: 0.1
 d_model: 256
 nhead: 4
-encoder_num_layers: 12
+encoder_num_layers: 16
 d_ffn: 2048
 kernel_size: 31
 # NOTE: the following parameters must be changed to switch from non-causal (default) to causal
@@ -92,7 +92,7 @@ joint_dim: 640
 
 # Decoding parameters
 valid_search_freq: 1
-beam_size: 20
+beam_size: 29
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
 expand_beam: 2.3

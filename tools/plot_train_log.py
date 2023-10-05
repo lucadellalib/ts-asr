@@ -1,9 +1,9 @@
 #!/usr/bin/env/python
 
-"""Plot SpeechBrain train log.
+"""Plot train log.
 
 To run this script (requires Matplotlib installed):
-> python plot_train_log.py <path-to-train_log>
+> python plot_train_log.py <path-to-train_log.txt>
 
 Authors
  * Luca Della Libera 2023
@@ -12,7 +12,7 @@ Authors
 import argparse
 import os
 from collections import defaultdict
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 from numpy import ndarray
@@ -22,12 +22,6 @@ try:
     from matplotlib import pyplot as plt, rc
 except ImportError:
     raise ImportError("This script requires Matplotlib (`pip install matplotlib`)")
-
-
-__all__ = [
-    "parse_train_log",
-    "plot_metrics",
-]
 
 
 _EXPECTED_METRICS = [
@@ -83,7 +77,9 @@ def parse_train_log(train_log: "str") -> "Dict[str, ndarray]":
 def plot_metrics(
     metrics: "Dict[str, ndarray]",
     output_image: "str",
-    title: "str" = "",
+    xlabel: "Optional[str]" = None,
+    ylabel: "Optional[str]" = None,
+    title: "Optional[str]" = None,
     figsize: "Tuple[float, float]" = (8.0, 4.0),
     usetex: "bool" = False,
     style_file_or_name: "str" = "classic",
@@ -97,15 +93,16 @@ def plot_metrics(
         the metrics to the metric values themselves.
     output_image:
         The path to the output image.
+    xlabel:
+        The x-axis label.
+    ylabel:
+        The y-axis label.
     title:
         The title.
-    figsize:
-        The figure size.
     usetex:
         True to render text with LaTeX, False otherwise.
     style_file_or_name:
-        The path to a Matplotlib style file or the name of one
-        of Matplotlib built-in styles
+        The path to a Matplotlib style file or the name of one of Matplotlib built-in styles
         (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
 
     Examples
@@ -135,7 +132,7 @@ def plot_metrics(
         for i, value in enumerate(metrics["valid WER"]):
             if i % 10 == 0:
                 plt.annotate(
-                    f"WER={value}%", (i + 1, metrics["valid loss"][i]), fontsize=10,
+                    f"WER={value}%", (i + 1, metrics["valid loss"][i]),
                 )
 
         # Test
@@ -145,20 +142,22 @@ def plot_metrics(
             )
             for i, value in enumerate(metrics["test WER"]):
                 plt.annotate(
-                    f"WER={value}%", (i + 1, metrics["test loss"][i]), fontsize=10,
+                    f"WER={value}%", (i + 1, metrics["test loss"][i]),
                 )
 
         plt.grid()
-        plt.title(title)
-        plt.legend(fontsize=10)
-        plt.xlabel("Epoch")
-        xmin, xmax = plt.xlim()
-        xrange = xmax - xmin
-        plt.xlim(xmin - 0.025 * xrange, xmax + 0.025 * xrange)
-        plt.ylabel("Loss")
-        ymin, ymax = plt.ylim()
-        yrange = ymax - ymin
-        plt.ylim(ymin - 0.025 * yrange, ymax + 0.025 * yrange)
+        if xlabel:
+            plt.xlabel(xlabel)
+        if ylabel:
+            plt.ylabel(ylabel)
+        if title:
+            plt.title(title)
+        # xmin, xmax = plt.xlim()
+        # xrange = xmax - xmin
+        # plt.xlim(xmin - 0.025 * xrange, xmax + 0.025 * xrange)
+        # ymin, ymax = plt.ylim()
+        # yrange = ymax - ymin
+        # plt.ylim(ymin - 0.025 * yrange, ymax + 0.025 * yrange)
         fig.tight_layout()
         plt.savefig(output_image, bbox_inches="tight")
         plt.close()
@@ -171,6 +170,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-o", "--output_image", help="path to output image",
+    )
+    parser.add_argument(
+        "-x", "--xlabel", help="x-axis label",
+    )
+    parser.add_argument(
+        "-y", "--ylabel", help="y-axis label",
     )
     parser.add_argument(
         "-t", "--title", help="title",
@@ -191,10 +196,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     metrics = parse_train_log(args.train_log)
     output_image = args.output_image or args.train_log.replace(".txt", ".png")
-    title = args.title or args.train_log
+    xlabel = args.xlabel or "Epoch"
+    ylabel = args.ylabel or "Loss"
+    title = args.title
     plot_metrics(
         metrics,
         output_image,
+        xlabel,
+        ylabel,
         title,
         args.figsize,
         args.usetex,
