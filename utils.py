@@ -14,7 +14,7 @@ from scipy.io.wavfile import write
 
 __all__ = [
     "play_waveform",
-    "plot_attentions",
+    "plot_attention",
     "plot_embeddings",
     "plot_spectrogram",
     "plot_waveform",
@@ -53,7 +53,7 @@ def plot_waveform(
     xlabel=None,
     ylabel=None,
     title=None,
-    figsize=(4.0, 4.0),
+    figsize=(6.0, 6.0),
     usetex=False,
     legend=False,
     style_file_or_name="classic",
@@ -141,7 +141,7 @@ def plot_spectrogram(
     xlabel=None,
     ylabel=None,
     title=None,
-    figsize=(4.0, 4.0),
+    figsize=(6.0, 6.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
@@ -206,22 +206,28 @@ def plot_spectrogram(
         plt.close()
 
 
-def plot_attentions(
-    attentions,
-    output_image="attentions.png",
-    figsize=(16.0, 8.0),
+def plot_attention(
+    attention,
+    output_image="attention.png",
+    xlabel=None,
+    ylabel=None,
+    figsize=(24.0, 6.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
 ):
-    """Plot per-layer attention maps.
+    """Plot an attention map.
 
     Arguments
     ---------
-    attentions : np.ndarray
-        The per-layer attention maps, shape: [num_layers, num_heads, seq_length, seq_length].
+    attention : np.ndarray
+        The attention map, shape: [num_heads, seq_length, seq_length].
     output_image : str, optional
         The path to the output image.
+    xlabel : str, optional
+        The x-axis label.
+    ylabel : str, optional
+        The y-axis label.
     figsize : tuple, optional
         The figure size.
     usetex : bool, optional
@@ -247,26 +253,21 @@ def plot_attentions(
             rc("text", usetex=usetex)
             rc("font", family="serif", serif=["Computer Modern"])
 
-        attentions = np.array(attentions)
-        L, H, T, T = attentions.shape
-        fig, axes = plt.subplots(L, H, figsize=figsize, squeeze=False)
-        for i, layer in enumerate(attentions):
-            for j, head in enumerate(layer):
-                ax = axes[i, j]
-                im = ax.imshow(head, cmap="viridis")
-                ax.tick_params(direction="out")
+        attention = np.array(attention)
+        H, T, T = attention.shape
+        fig, axes = plt.subplots(
+            1, H + 1, figsize=figsize, gridspec_kw={"width_ratios": [1, 1, 1, 1, 0.05]}
+        )
+        for i, head in enumerate(attention):
+            ax = axes[i]
+            im = ax.imshow(head, cmap="viridis")
+            ax.set_title(f"Head {i + 1}")
+            if xlabel:
+                ax.set_xlabel(xlabel)
+            if ylabel:
                 if i == 0:
-                    ax.set_title(f"Head {j + 1}")
-                if j == 0:
-                    ax.set_ylabel(f"Layer {i + 1}")
-                if i < L - 1:
-                    ax.set_xticks([], [])
-                else:
-                    ax.xaxis.tick_bottom()
-                if j < H - 1:
-                    ax.set_yticks([], [])
-                else:
-                    ax.yaxis.tick_right()
+                    ax.set_ylabel(ylabel)
+        plt.colorbar(im, axes[-1], shrink=0.75)
 
         if interactive:
             plt.show(block=False)
@@ -282,7 +283,7 @@ def plot_embeddings(
     xlabel="t-SNE x",
     ylabel="t-SNE y",
     title=None,
-    figsize=(4.0, 4.0),
+    figsize=(6.0, 6.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,

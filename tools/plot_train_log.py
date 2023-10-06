@@ -80,7 +80,7 @@ def plot_metrics(
     xlabel: "Optional[str]" = None,
     ylabel: "Optional[str]" = None,
     title: "Optional[str]" = None,
-    figsize: "Tuple[float, float]" = (8.0, 4.0),
+    figsize: "Tuple[float, float]" = (6.0, 6.0),
     usetex: "bool" = False,
     style_file_or_name: "str" = "classic",
 ) -> "None":
@@ -181,7 +181,7 @@ if __name__ == "__main__":
         "-t", "--title", help="title",
     )
     parser.add_argument(
-        "-f", "--figsize", nargs=2, default=(8.0, 4.0), type=float, help="figure size",
+        "-f", "--figsize", nargs=2, default=(6.0, 6.0), type=float, help="figure size",
     )
     parser.add_argument(
         "-u", "--usetex", action="store_true", help="render text with LaTeX",

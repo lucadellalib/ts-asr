@@ -193,7 +193,7 @@ def plot_wers(
     xlabel: "Optional[str]" = None,
     ylabel: "Optional[str]" = None,
     title: "Optional[str]" = None,
-    figsize: "Tuple[float, float]" = (8.0, 4.0),
+    figsize: "Tuple[float, float]" = (6.0, 6.0),
     usetex: "bool" = False,
     style_file_or_name: "str" = "classic",
 ) -> "None":
