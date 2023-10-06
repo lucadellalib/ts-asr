@@ -16,7 +16,7 @@ __all__ = [
     "play_waveform",
     "plot_attention",
     "plot_embeddings",
-    "plot_spectrogram",
+    "plot_fbanks",
     "plot_waveform",
 ]
 
@@ -48,10 +48,11 @@ def play_waveform(waveform, sample_rate, output_file="waveform.wav", interactive
 def plot_waveform(
     waveform,
     sample_rate,
+    opacity=1.0,
     output_image="waveform.png",
     labels=None,
-    xlabel=None,
-    ylabel=None,
+    xlabel="Time (s)",
+    ylabel="Amplitude",
     title=None,
     figsize=(6.0, 6.0),
     usetex=False,
@@ -67,6 +68,8 @@ def plot_waveform(
         The raw waveform(s), shape: [num_frames].
     sample_rate : int
         The sample rate.
+    opacity: float, optional
+        The opacity (useful to plot overlapped waveforms).
     output_image : str, optional
         The path to the output image.
     labels: list, optional
@@ -102,7 +105,7 @@ def plot_waveform(
     else:
         waveforms = [np.array(waveform).squeeze()]
     if labels is None:
-        labels = [None] * len(waveforms)
+        labels = [f"Waveform {i}" for i in range(len(waveforms))]
 
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
@@ -116,7 +119,7 @@ def plot_waveform(
         for i, x in enumerate(waveforms):
             num_frames = x.shape[0]
             time_axis = np.arange(num_frames) / sample_rate
-            plt.plot(time_axis, x, label=labels[i])
+            plt.plot(time_axis, x, label=labels[i], alpha=opacity)
         plt.grid()
         if legend:
             plt.legend(fancybox=True)
@@ -134,19 +137,21 @@ def plot_waveform(
         plt.close()
 
 
-def plot_spectrogram(
+def plot_fbanks(
     waveform,
     sample_rate,
-    output_image="spectrogram.png",
-    xlabel=None,
-    ylabel=None,
+    output_image="fbanks.png",
+    xlabel="Feature frame",
+    ylabel="Frequency (Hz)",
     title=None,
-    figsize=(6.0, 6.0),
+    figsize=(8.0, 6.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
+    **fbanks_kwargs,
 ):
-    """Plot a waveform in the time-frequency domain.
+    """Plot a waveform in the time-frequency domain by
+    extracting filter bank features.
 
     Arguments
     ---------
@@ -171,12 +176,24 @@ def plot_spectrogram(
         (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
     interactive : bool, optional
         True to plot interactively, False otherwise.
+    fbanks_kwargs : dict, optional
+        The filter banks keyword arguments.
 
     """
     try:
         from matplotlib import pyplot as plt, rc
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
     except ImportError:
         logging.warning("This function requires Matplotlib (`pip install matplotlib`)")
+        return
+
+    try:
+        from speechbrain.lobes.features import Fbank
+        import torch
+    except ImportError:
+        logging.warning(
+            "This function requires SpeechBrain (`pip install speechbrain`)"
+        )
         return
 
     if os.path.isfile(style_file_or_name):
@@ -188,16 +205,22 @@ def plot_spectrogram(
             rc("font", family="serif", serif=["Computer Modern"])
 
         plt.figure(figsize=figsize)
-        waveform = np.array(waveform).squeeze()
-        plt.specgram(waveform, Fs=sample_rate)
-        plt.grid()
-        plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+        waveform = torch.as_tensor(waveform).squeeze()[None]
+        if not fbanks_kwargs:
+            fbanks_kwargs = {"n_fft": 512, "n_mels": 80, "win_length": 32}
+        fbank = Fbank(sample_rate=sample_rate, **fbanks_kwargs)
+        fbanks = np.array(fbank(waveform)[0].T)
+        plt.imshow(fbanks, origin="lower")
         if xlabel:
             plt.xlabel(xlabel)
         if ylabel:
             plt.ylabel(ylabel)
         if title:
             plt.title(title)
+        # Add color bar
+        divider = make_axes_locatable(plt.gca())
+        cax = divider.append_axes("right", size="2.5%", pad=0.05)
+        plt.colorbar(cax=cax)
 
         if interactive:
             plt.show(block=False)
@@ -209,8 +232,8 @@ def plot_spectrogram(
 def plot_attention(
     attention,
     output_image="attention.png",
-    xlabel=None,
-    ylabel=None,
+    xlabel="Feature frame",
+    ylabel="Feature frame",
     figsize=(24.0, 6.0),
     usetex=False,
     style_file_or_name="classic",
