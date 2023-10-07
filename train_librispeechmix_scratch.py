@@ -63,6 +63,21 @@ class TSASR(sb.Brain):
             speaker_embs *= mask
             speaker_embs = speaker_embs.sum(dim=-2, keepdims=True)
             speaker_embs /= mask.sum(dim=-2, keepdims=True)
+        if hparams["plot_embeddings"]:
+            # Collect speaker embeddings
+            for i, (ID, speaker_emb) in enumerate(zip(batch.id, speaker_embs)):
+                speaker_emb = speaker_emb.detach()[
+                    : (enroll_sigs_lens[i] * len(speaker_emb))
+                    .ceil()
+                    .clamp(max=len(speaker_emb))
+                    .int()
+                ]
+                if self.hparams.injection_mode == "cross_attention":
+                    # Pooling along time dimension
+                    speaker_emb = speaker_emb.mean(dim=0)
+                else:
+                    speaker_emb = speaker_emb[0]
+                self.all_speaker_embs[ID] = speaker_emb.cpu().numpy()
 
         # Add speed perturbation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
@@ -81,9 +96,30 @@ class TSASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        enc_out = self.modules.encoder(
-            feats, mixed_sigs_lens, speaker_embs, enroll_sigs_lens
-        )
+        if hparams["plot_attentions"]:
+            # Plot attention
+            from utils import plot_attention
+
+            enc_out, attns = self.modules.encoder(
+                feats, mixed_sigs_lens, speaker_embs, enroll_sigs_lens, return_attn=True
+            )
+            for i, ID in enumerate(batch.id):
+                ID = ID.replace("/", "_").split(".")[0]
+                output_path = os.path.join(hparams["image_folder"], ID, "attention")
+                os.makedirs(output_path, exist_ok=True)
+                for format in hparams["image_formats"]:
+                    for j, attn in enumerate(attns):
+                        plot_attention(
+                            attn[i].detach().cpu(),
+                            os.path.join(
+                                output_path,
+                                f"{ID}_attention_{str(j + 1).zfill(2)}.{format}",
+                            ),
+                        )
+        else:
+            enc_out = self.modules.encoder(
+                feats, mixed_sigs_lens, speaker_embs, enroll_sigs_lens
+            )
         enc_out = self.modules.encoder_proj(enc_out)
 
         # Forward decoder/predictor
@@ -145,6 +181,8 @@ class TSASR(sb.Brain):
         if stage != sb.Stage.TRAIN:
             self.cer_metric = self.hparams.cer_computer()
             self.wer_metric = self.hparams.wer_computer()
+        if hparams["plot_embeddings"]:
+            self.all_speaker_embs = {}
 
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of each epoch."""
@@ -205,6 +243,19 @@ class TSASR(sb.Brain):
                 with open(self.hparams.wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
 
+        if hparams["plot_embeddings"]:
+            # Plot embeddings
+            from utils import plot_embeddings
+
+            os.makedirs(hparams["image_folder"], exist_ok=True)
+            for format in hparams["image_formats"]:
+                plot_embeddings(
+                    list(self.all_speaker_embs.values()),
+                    [str(x.split("/")[-3]) for x in self.all_speaker_embs.keys()],
+                    os.path.join(hparams["image_folder"], f"embeddings.{format}"),
+                    perplexity=min(len(self.all_speaker_embs) - 1, 30),
+                )
+
 
 def dataio_prepare(hparams, tokenizer):
     """This function prepares the datasets to be used in the brain class.
@@ -262,10 +313,12 @@ def dataio_prepare(hparams, tokenizer):
 
     # 2. Define audio pipeline
     @sb.utils.data_pipeline.takes(
-        "wavs", "enroll_wav", "delays", "start", "duration", "target_speaker_idx"
+        "wavs", "enroll_wav", "delays", "start", "duration", "target_speaker_idx", "id",
     )
     @sb.utils.data_pipeline.provides("mixed_sig", "enroll_sig")
-    def audio_pipeline(wavs, enroll_wav, delays, start, duration, target_speaker_idx):
+    def audio_pipeline(
+        wavs, enroll_wav, delays, start, duration, target_speaker_idx, ID
+    ):
         # Mixed signal
         sigs = []
         for wav in wavs:
@@ -321,6 +374,59 @@ def dataio_prepare(hparams, tokenizer):
         enroll_sig = enroll_sig[
             : math.ceil(hparams["trim_enroll"] * hparams["sample_rate"])
         ]
+
+        if hparams["plot_data"]:
+            from utils import play_waveform, plot_fbanks, plot_waveform
+
+            ID = ID.replace("/", "_").split(".")[0]
+            output_path = os.path.join(hparams["image_folder"], ID)
+            os.makedirs(output_path, exist_ok=True)
+            play_waveform(
+                mixed_sig,
+                hparams["sample_rate"],
+                os.path.join(output_path, f"{ID}.wav"),
+            )
+            for format in hparams["image_formats"]:
+                plot_waveform(
+                    [sigs[target_speaker_idx]]
+                    + [x for i, x in enumerate(sigs) if i != target_speaker_idx],
+                    hparams["sample_rate"],
+                    opacity=0.6,
+                    output_image=os.path.join(output_path, f"{ID}_waveform.{format}"),
+                    labels=["Target"] + ["Interference"]
+                    if len(sigs) == 2
+                    else [f"Interference {i + 1}" for i in range(len(sigs) - 1)],
+                    legend=True,
+                )
+                plot_fbanks(
+                    mixed_sig,
+                    hparams["sample_rate"],
+                    output_image=os.path.join(output_path, f"{ID}_fbanks.{format}"),
+                )
+
+            play_waveform(
+                enroll_sig,
+                hparams["sample_rate"],
+                os.path.join(output_path, f"{ID}_enrollment.wav"),
+            )
+            for format in hparams["image_formats"]:
+                plot_waveform(
+                    enroll_sig,
+                    hparams["sample_rate"],
+                    output_image=os.path.join(
+                        output_path, f"{ID}_waveform_enrollment.{format}",
+                    ),
+                    labels=["Enrollment"],
+                    legend=True,
+                )
+                plot_fbanks(
+                    enroll_sig,
+                    hparams["sample_rate"],
+                    output_image=os.path.join(
+                        output_path, f"{ID}_fbanks_enrollment.{format}"
+                    ),
+                )
+
         yield enroll_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
@@ -332,7 +438,7 @@ def dataio_prepare(hparams, tokenizer):
     )
     def text_pipeline(wrd):
         tokens_list = tokenizer.sp.encode_as_ids(wrd)
-        tokens_bos = torch.LongTensor([hparams["blank_index"]] + (tokens_list))
+        tokens_bos = torch.LongTensor([hparams["blank_index"]] + tokens_list)
         yield tokens_bos
         tokens = torch.LongTensor(tokens_list)
         yield tokens
@@ -349,7 +455,7 @@ def dataio_prepare(hparams, tokenizer):
     # 4. Set output
     sb.dataio.dataset.set_output_keys(
         datasets,
-        ["id", "mixed_sig", "enroll_sig", "tokens_bos", "tokens", "target_words",],
+        ["id", "mixed_sig", "enroll_sig", "tokens_bos", "tokens", "target_words"],
     )
 
     return train_data, valid_data, test_data

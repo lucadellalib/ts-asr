@@ -10,6 +10,7 @@ Authors
 """
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -21,6 +22,39 @@ try:
     from matplotlib import pyplot as plt, rc
 except ImportError:
     raise ImportError("This script requires Matplotlib (`pip install matplotlib`)")
+
+
+@contextlib.contextmanager
+def _set_style(style_file_or_name="classic", usetex=False, fontsize=12):
+    """Set plotting style.
+
+    Arguments
+    ---------
+    style_file_or_name : str, optional
+        The path to a Matplotlib style file or the name of one of Matplotlib built-in styles
+        (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
+    usetex : bool, optional
+        True to render text with LaTeX, False otherwise.
+    fontsize : int, optional
+        The global font size.
+
+    """
+    # Customize style
+    try:
+        plt.style.use(style_file_or_name)
+        plt.rc("font", size=fontsize)
+        plt.rc("axes", titlesize=fontsize)
+        plt.rc("axes", labelsize=fontsize)
+        plt.rc("xtick", labelsize=fontsize - 1)
+        plt.rc("ytick", labelsize=fontsize - 1)
+        plt.rc("legend", fontsize=fontsize)
+        plt.rc("figure", titlesize=fontsize)
+        rc("text", usetex=usetex)
+        if usetex:
+            rc("font", family="serif", serif=["Computer Modern"])
+        yield
+    finally:
+        plt.style.use("default")
 
 
 def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
@@ -193,7 +227,7 @@ def plot_wers(
     xlabel: "Optional[str]" = None,
     ylabel: "Optional[str]" = None,
     title: "Optional[str]" = None,
-    figsize: "Tuple[float, float]" = (6.0, 6.0),
+    figsize: "Tuple[float, float]" = (6.0, 4.0),
     usetex: "bool" = False,
     style_file_or_name: "str" = "classic",
 ) -> "None":
@@ -229,17 +263,12 @@ def plot_wers(
     Examples
     --------
     >>> wers = parse_wer_report("wer_test-clean-2mix.txt")
-    >>> plot_wers(wers, "wer_test-clean-2mix.png")
+    >>> plot_wers(wers, "wer_test-clean-2mix.jpg")
 
     """
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
-    with plt.style.context(style_file_or_name):
-        # Customize style
-        if usetex:
-            rc("text", usetex=usetex)
-            rc("font", family="serif", serif=["Computer Modern"])
-
+    with _set_style(style_file_or_name, usetex):
         plt.figure(figsize=figsize)
         utterance_ids = list(wers.keys())
         wers = [wers[x] for x in utterance_ids]
@@ -302,7 +331,7 @@ if __name__ == "__main__":
         "-t", "--title", help="title",
     )
     parser.add_argument(
-        "-f", "--figsize", nargs=2, default=(6.0, 6.0), help="figure size",
+        "-f", "--figsize", nargs=2, default=(6.0, 4.0), help="figure size",
     )
     parser.add_argument(
         "-u", "--usetex", action="store_true", help="render text with LaTeX",
@@ -322,14 +351,14 @@ if __name__ == "__main__":
         features = {x: features[x][feature] for x in features}
         output_image = (
             args.output_image
-            or args.wer_report.replace(".txt", "") + f"_wer_vs_{feature}" + ".png"
+            or args.wer_report.replace(".txt", "") + f"_wer_vs_{feature}" + ".jpg"
         )
         xlabel = args.xlabel or feature
         ylabel = args.xlabel or "Rate (%)"
     else:
         features = None
         output_image = (
-            args.output_image or args.wer_report.replace(".json", "") + ".png"
+            args.output_image or args.wer_report.replace(".json", "") + ".jpg"
         )
         xlabel = args.xlabel or "Rate (%)"
         ylabel = args.ylabel or "Count"

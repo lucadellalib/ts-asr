@@ -12,6 +12,15 @@ experiment_name: LibriSpeechMix/Conformer-T_Scratch
 seed: 0
 __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
+# Set to True for plotting intermediate results (useful at test time to analyze the model)
+# NOTE: when plotting, it is recommended to set `dataloader_workers=0`
+# NOTE: plotting is not supported in distributed mode
+plot_data: False
+plot_attentions: False
+plot_embeddings: False
+image_folder: !ref <output_folder>/images
+image_formats: [jpg, pdf]
+
 # Data preparation
 data_folder: !PLACEHOLDER
 splits: [train-2mix, dev-clean-2mix, test-clean-2mix]  # We need to provide at least 1 test split as a placeholder

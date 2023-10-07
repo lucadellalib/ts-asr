@@ -4,6 +4,7 @@ Authors
 * Luca Della Libera 2023
 """
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -21,19 +22,59 @@ __all__ = [
 ]
 
 
+@contextlib.contextmanager
+def _set_style(style_file_or_name="classic", usetex=False, fontsize=12):
+    """Set plotting style.
+
+    Arguments
+    ---------
+    style_file_or_name : str, optional
+        The path to a Matplotlib style file or the name of one of Matplotlib built-in styles
+        (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
+    usetex : bool, optional
+        True to render text with LaTeX, False otherwise.
+    fontsize : int, optional
+        The global font size.
+
+    """
+    try:
+        from matplotlib import pyplot as plt, rc
+    except ImportError:
+        logging.warning("This function requires Matplotlib (`pip install matplotlib`)")
+        yield
+        return
+
+    # Customize style
+    try:
+        plt.style.use(style_file_or_name)
+        plt.rc("font", size=fontsize)
+        plt.rc("axes", titlesize=fontsize)
+        plt.rc("axes", labelsize=fontsize)
+        plt.rc("xtick", labelsize=fontsize - 1)
+        plt.rc("ytick", labelsize=fontsize - 1)
+        plt.rc("legend", fontsize=fontsize)
+        plt.rc("figure", titlesize=fontsize)
+        rc("text", usetex=usetex)
+        if usetex:
+            rc("font", family="serif", serif=["Computer Modern"])
+        yield
+    finally:
+        plt.style.use("default")
+
+
 def play_waveform(waveform, sample_rate, output_file="waveform.wav", interactive=False):
     """Play a waveform (requires FFplay installed on the system).
 
     Arguments
     ---------
     waveform : np.ndarray
-        The raw waveform, shape: [num_channels, num_frames].
+        The raw waveform, shape: [num_frames].
     sample_rate : int
         The sample rate.
     output_file : str, optional
-        The path to the output image.
+        The path to the output file.
     interactive : bool, optional
-        True to plot interactively, False otherwise.
+        True to play interactively, False otherwise.
 
     """
     waveform = np.array(waveform)
@@ -49,12 +90,12 @@ def plot_waveform(
     waveform,
     sample_rate,
     opacity=1.0,
-    output_image="waveform.png",
+    output_image="waveform.jpg",
     labels=None,
     xlabel="Time (s)",
     ylabel="Amplitude",
     title=None,
-    figsize=(6.0, 6.0),
+    figsize=(6.0, 4.0),
     usetex=False,
     legend=False,
     style_file_or_name="classic",
@@ -105,16 +146,11 @@ def plot_waveform(
     else:
         waveforms = [np.array(waveform).squeeze()]
     if labels is None:
-        labels = [f"Waveform {i}" for i in range(len(waveforms))]
+        labels = [f"Waveform {i + 1}" for i in range(len(waveforms))]
 
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
-    with plt.style.context(style_file_or_name):
-        # Customize style
-        if usetex:
-            rc("text", usetex=usetex)
-            rc("font", family="serif", serif=["Computer Modern"])
-
+    with _set_style(style_file_or_name, usetex):
         plt.figure(figsize=figsize)
         for i, x in enumerate(waveforms):
             num_frames = x.shape[0]
@@ -140,11 +176,11 @@ def plot_waveform(
 def plot_fbanks(
     waveform,
     sample_rate,
-    output_image="fbanks.png",
+    output_image="fbanks.jpg",
     xlabel="Feature frame",
     ylabel="Frequency (Hz)",
     title=None,
-    figsize=(8.0, 6.0),
+    figsize=(10.0, 10.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
@@ -182,7 +218,6 @@ def plot_fbanks(
     """
     try:
         from matplotlib import pyplot as plt, rc
-        from mpl_toolkits.axes_grid1 import make_axes_locatable
     except ImportError:
         logging.warning("This function requires Matplotlib (`pip install matplotlib`)")
         return
@@ -198,12 +233,7 @@ def plot_fbanks(
 
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
-    with plt.style.context(style_file_or_name):
-        # Customize style
-        if usetex:
-            rc("text", usetex=usetex)
-            rc("font", family="serif", serif=["Computer Modern"])
-
+    with _set_style(style_file_or_name, usetex):
         plt.figure(figsize=figsize)
         waveform = torch.as_tensor(waveform).squeeze()[None]
         if not fbanks_kwargs:
@@ -211,16 +241,14 @@ def plot_fbanks(
         fbank = Fbank(sample_rate=sample_rate, **fbanks_kwargs)
         fbanks = np.array(fbank(waveform)[0].T)
         plt.imshow(fbanks, origin="lower")
+        yrange = np.arange(0, fbanks_kwargs["n_mels"] + 1, 20)
+        plt.yticks(yrange)
         if xlabel:
             plt.xlabel(xlabel)
         if ylabel:
             plt.ylabel(ylabel)
         if title:
             plt.title(title)
-        # Add color bar
-        divider = make_axes_locatable(plt.gca())
-        cax = divider.append_axes("right", size="2.5%", pad=0.05)
-        plt.colorbar(cax=cax)
 
         if interactive:
             plt.show(block=False)
@@ -231,10 +259,10 @@ def plot_fbanks(
 
 def plot_attention(
     attention,
-    output_image="attention.png",
+    output_image="attention.jpg",
     xlabel="Feature frame",
     ylabel="Feature frame",
-    figsize=(24.0, 6.0),
+    figsize=(16.0, 4.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
@@ -244,7 +272,7 @@ def plot_attention(
     Arguments
     ---------
     attention : np.ndarray
-        The attention map, shape: [num_heads, seq_length, seq_length].
+        The attention map, shape: [num_heads, query_length, key_value_length].
     output_image : str, optional
         The path to the output image.
     xlabel : str, optional
@@ -270,27 +298,24 @@ def plot_attention(
 
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
-    with plt.style.context(style_file_or_name):
-        # Customize style
-        if usetex:
-            rc("text", usetex=usetex)
-            rc("font", family="serif", serif=["Computer Modern"])
-
+    with _set_style(style_file_or_name, usetex):
         attention = np.array(attention)
-        H, T, T = attention.shape
-        fig, axes = plt.subplots(
-            1, H + 1, figsize=figsize, gridspec_kw={"width_ratios": [1, 1, 1, 1, 0.05]}
-        )
+        H = attention.shape[0]
+        # fig, axes = plt.subplots(
+        #    1, H + 1, figsize=figsize, gridspec_kw={"width_ratios": [1, 1, 1, 1, 0.05]}
+        # )
+        fig, axes = plt.subplots(1, H, figsize=figsize)
         for i, head in enumerate(attention):
             ax = axes[i]
-            im = ax.imshow(head, cmap="viridis")
+            ax.imshow(head, cmap="viridis")
+            # im = ax.imshow(head, cmap="viridis")
             ax.set_title(f"Head {i + 1}")
             if xlabel:
                 ax.set_xlabel(xlabel)
             if ylabel:
                 if i == 0:
                     ax.set_ylabel(ylabel)
-        plt.colorbar(im, axes[-1], shrink=0.75)
+        # plt.colorbar(im, axes[-1], shrink=0.75)
 
         if interactive:
             plt.show(block=False)
@@ -302,11 +327,11 @@ def plot_attention(
 def plot_embeddings(
     embeddings,
     labels,
-    output_image="embeddings.png",
+    output_image="embeddings.jpg",
     xlabel="t-SNE x",
     ylabel="t-SNE y",
     title=None,
-    figsize=(6.0, 6.0),
+    figsize=(6.0, 4.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
@@ -316,7 +341,7 @@ def plot_embeddings(
 
     Arguments
     ---------
-    embeddings : np.ndarray
+    embeddings : np.ndarray or list
         The embeddings, shape: [num_embeddings, embedding_dim].
     labels : list
         The embedding labels, length: [num_embeddings].
@@ -366,12 +391,7 @@ def plot_embeddings(
 
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
-    with plt.style.context(style_file_or_name):
-        # Customize style
-        if usetex:
-            rc("text", usetex=usetex)
-            rc("font", family="serif", serif=["Computer Modern"])
-
+    with _set_style(style_file_or_name, usetex):
         plt.figure(figsize=figsize)
         plt.scatter(embeddings[:, 0], embeddings[:, 1], c=labels)
         plt.grid()

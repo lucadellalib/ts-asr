@@ -55,7 +55,28 @@ class TSASR(sb.Brain):
 
         # Forward encoder/transcriber
         feats = self.modules.frontend(feats)
-        enc_out = self.modules.encoder(feats, mixed_sigs_lens)
+        if hparams["plot_attentions"]:
+            # Plot attention
+            from utils import plot_attention
+
+            enc_out, attns = self.modules.encoder(
+                feats, mixed_sigs_lens, return_attn=True
+            )
+            for i, ID in enumerate(batch.id):
+                ID = ID.replace("/", "_").split(".")[0]
+                output_path = os.path.join(hparams["image_folder"], ID, "attention")
+                os.makedirs(output_path, exist_ok=True)
+                for format in hparams["image_formats"]:
+                    for j, attn in enumerate(attns):
+                        plot_attention(
+                            attn[i].detach().cpu(),
+                            os.path.join(
+                                output_path,
+                                f"{ID}_attention_{str(j + 1).zfill(2)}.{format}",
+                            ),
+                        )
+        else:
+            enc_out = self.modules.encoder(feats, mixed_sigs_lens,)
         enc_out = self.modules.encoder_proj(enc_out)
 
         # Forward decoder/predictor
@@ -234,10 +255,10 @@ def dataio_prepare(hparams, tokenizer):
 
     # 2. Define audio pipeline
     @sb.utils.data_pipeline.takes(
-        "wavs", "delays", "start", "duration", "target_speaker_idx"
+        "wavs", "delays", "start", "duration", "target_speaker_idx", "id",
     )
     @sb.utils.data_pipeline.provides("mixed_sig")
-    def audio_pipeline(wavs, delays, start, duration, target_speaker_idx):
+    def audio_pipeline(wavs, delays, start, duration, target_speaker_idx, ID):
         # Mixed signal
         sigs = []
         for wav in wavs:
@@ -277,6 +298,36 @@ def dataio_prepare(hparams, tokenizer):
         frame_start = math.ceil(start * hparams["sample_rate"])
         frame_duration = math.ceil(duration * hparams["sample_rate"])
         mixed_sig = mixed_sig[frame_start : frame_start + frame_duration]
+
+        if hparams["plot_data"]:
+            from utils import play_waveform, plot_fbanks, plot_waveform
+
+            ID = ID.replace("/", "_").split(".")[0]
+            output_path = os.path.join(hparams["image_folder"], ID)
+            os.makedirs(output_path, exist_ok=True)
+            play_waveform(
+                mixed_sig,
+                hparams["sample_rate"],
+                os.path.join(output_path, f"{ID}.wav"),
+            )
+            for format in hparams["image_formats"]:
+                plot_waveform(
+                    [sigs[target_speaker_idx]]
+                    + [x for i, x in enumerate(sigs) if i != target_speaker_idx],
+                    hparams["sample_rate"],
+                    opacity=0.6,
+                    output_image=os.path.join(output_path, f"{ID}_waveform.{format}"),
+                    labels=["Target"] + ["Interference"]
+                    if len(sigs) == 2
+                    else [f"Interference {i + 1}" for i in range(len(sigs) - 1)],
+                    legend=True,
+                )
+                plot_fbanks(
+                    mixed_sig,
+                    hparams["sample_rate"],
+                    output_image=os.path.join(output_path, f"{ID}_fbanks.{format}"),
+                )
+
         yield mixed_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
@@ -288,7 +339,7 @@ def dataio_prepare(hparams, tokenizer):
     )
     def text_pipeline(wrd):
         tokens_list = tokenizer.sp.encode_as_ids(wrd)
-        tokens_bos = torch.LongTensor([hparams["blank_index"]] + (tokens_list))
+        tokens_bos = torch.LongTensor([hparams["blank_index"]] + tokens_list)
         yield tokens_bos
         tokens = torch.LongTensor(tokens_list)
         yield tokens

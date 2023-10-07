@@ -22,7 +22,7 @@ import pathlib
 import argparse
 import tempfile
 import warnings
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import speechbrain as sb
 from datetime import date
 from enum import Enum, auto
@@ -1055,11 +1055,15 @@ class Brain:
 
         # should_step=True => synchronize gradient between DDP processes
         with self.no_sync(not should_step):
-            with torch.autocast(
-                device_type=torch.device(self.device).type,
-                dtype=torch.bfloat16 if self.bfloat16_mix_prec else torch.float16,
-                enabled=self.auto_mix_prec,
-            ):
+            if self.device == "cpu" and not self.bfloat16_mix_prec:
+                cm = nullcontext()
+            else:
+                cm = torch.autocast(
+                    device_type=torch.device(self.device).type,
+                    dtype=torch.bfloat16 if self.bfloat16_mix_prec else torch.float16,
+                    enabled=self.auto_mix_prec,
+                )
+            with cm:
                 outputs = self.compute_forward(batch, sb.Stage.TRAIN)
 
             # Losses are excluded from mixed precision to avoid instabilities

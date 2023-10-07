@@ -10,6 +10,7 @@ Authors
 """
 
 import argparse
+import contextlib
 import os
 from collections import defaultdict
 from typing import Dict, Optional, Tuple
@@ -31,6 +32,39 @@ _EXPECTED_METRICS = [
     "valid CER",
     "valid WER",
 ]
+
+
+@contextlib.contextmanager
+def _set_style(style_file_or_name="classic", usetex=False, fontsize=12):
+    """Set plotting style.
+
+    Arguments
+    ---------
+    style_file_or_name : str, optional
+        The path to a Matplotlib style file or the name of one of Matplotlib built-in styles
+        (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
+    usetex : bool, optional
+        True to render text with LaTeX, False otherwise.
+    fontsize : int, optional
+        The global font size.
+
+    """
+    # Customize style
+    try:
+        plt.style.use(style_file_or_name)
+        plt.rc("font", size=fontsize)
+        plt.rc("axes", titlesize=fontsize)
+        plt.rc("axes", labelsize=fontsize)
+        plt.rc("xtick", labelsize=fontsize - 1)
+        plt.rc("ytick", labelsize=fontsize - 1)
+        plt.rc("legend", fontsize=fontsize)
+        plt.rc("figure", titlesize=fontsize)
+        rc("text", usetex=usetex)
+        if usetex:
+            rc("font", family="serif", serif=["Computer Modern"])
+        yield
+    finally:
+        plt.style.use("default")
 
 
 def parse_train_log(train_log: "str") -> "Dict[str, ndarray]":
@@ -80,7 +114,7 @@ def plot_metrics(
     xlabel: "Optional[str]" = None,
     ylabel: "Optional[str]" = None,
     title: "Optional[str]" = None,
-    figsize: "Tuple[float, float]" = (6.0, 6.0),
+    figsize: "Tuple[float, float]" = (6.0, 4.0),
     usetex: "bool" = False,
     style_file_or_name: "str" = "classic",
 ) -> "None":
@@ -108,15 +142,12 @@ def plot_metrics(
     Examples
     --------
     >>> metrics = parse_train_log("train_log.txt")
-    >>> plot_metrics(metrics, "train_log.png")
+    >>> plot_metrics(metrics, "train_log.jpg")
 
     """
     if os.path.isfile(style_file_or_name):
         style_file_or_name = os.path.realpath(style_file_or_name)
-    with plt.style.context(style_file_or_name):
-        rc("text", usetex=usetex)
-        fig = plt.figure(figsize=figsize)
-
+    with _set_style(style_file_or_name, usetex):
         # Train
         plt.plot(
             metrics["epoch"], metrics["train loss"], marker="o", label="Train loss",
@@ -181,7 +212,7 @@ if __name__ == "__main__":
         "-t", "--title", help="title",
     )
     parser.add_argument(
-        "-f", "--figsize", nargs=2, default=(6.0, 6.0), type=float, help="figure size",
+        "-f", "--figsize", nargs=2, default=(6.0, 4.0), type=float, help="figure size",
     )
     parser.add_argument(
         "-u", "--usetex", action="store_true", help="render text with LaTeX",
@@ -195,7 +226,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     metrics = parse_train_log(args.train_log)
-    output_image = args.output_image or args.train_log.replace(".txt", ".png")
+    output_image = args.output_image or args.train_log.replace(".txt", ".jpg")
     xlabel = args.xlabel or "Epoch"
     ylabel = args.ylabel or "Loss"
     title = args.title

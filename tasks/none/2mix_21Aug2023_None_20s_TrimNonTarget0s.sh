@@ -7,7 +7,9 @@ cd $ROOT_DIR
 python -m torch.distributed.launch --nproc_per_node=$NPROC_PER_NODE \
 train_librispeechmix_none.py \
 hparams/LibriSpeechMix/conformer-t_none.yaml \
---data_folder $DATA_DIR/LibriSpeechMix-21Aug2023 \
+--data_folder $DATA_DIR/LibriSpeechMix \
+--splits [train-2mix_21Aug2023, dev-clean-2mix, test-clean-2mix] \
+--test_splits [test-clean-2mix] \
 --output_folder results/none/2mix_21Aug2023_None_20s_TrimNonTarget0s \
 --num_epochs $NUM_EPOCHS \
 --augment $AUGMENT \
