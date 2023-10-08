@@ -49,7 +49,6 @@ class TSASR(sb.Brain):
         # Extract speaker embedding
         speaker_feats = self.modules.speaker_frontend(speaker_feats)
         speaker_embs = self.modules.speaker_encoder(speaker_feats, enroll_sigs_lens)
-        speaker_embs = self.modules.speaker_proj(speaker_embs)
         if self.hparams.injection_mode != "cross_attention":
             # Pooling along time dimension
             mask = length_to_mask(
@@ -78,6 +77,7 @@ class TSASR(sb.Brain):
                 else:
                     speaker_emb = speaker_emb[0]
                 self.all_speaker_embs[ID] = speaker_emb.cpu().numpy()
+        speaker_embs = self.modules.speaker_proj(speaker_embs)
 
         # Add speed perturbation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:

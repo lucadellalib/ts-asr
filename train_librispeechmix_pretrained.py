@@ -61,7 +61,6 @@ class TSASR(sb.Brain):
             ]
         else:
             speaker_embs = speaker_embs.embeddings[:, None, :]
-        speaker_embs = self.modules.speaker_proj(speaker_embs)
         if hparams["plot_embeddings"]:
             # Collect speaker embeddings
             for i, (ID, speaker_emb) in enumerate(zip(batch.id, speaker_embs)):
@@ -77,6 +76,7 @@ class TSASR(sb.Brain):
                 else:
                     speaker_emb = speaker_emb[0]
                 self.all_speaker_embs[ID] = speaker_emb.cpu().numpy()
+        speaker_embs = self.modules.speaker_proj(speaker_embs)
 
         # Add speed perturbation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:
