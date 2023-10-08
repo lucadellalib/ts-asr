@@ -17,7 +17,6 @@ hparams/LibriSpeechMix/conformer-t_scratch.yaml \
 --augment $AUGMENT \
 --trim_nontarget 32.0 \
 --injection_mode cross_attention \
---normalize_input False \
 --causal_encoder True \
 --frontend_padding causal \
 --distributed_launch

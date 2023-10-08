@@ -85,8 +85,7 @@ class TSASR(sb.Brain):
 
         # Extract features
         feats = self.modules.feature_extractor(mixed_sigs)
-        if self.hparams.normalize_input:
-            feats = self.modules.normalizer(feats, mixed_sigs_lens, epoch=current_epoch)
+        feats = self.modules.normalizer(feats, mixed_sigs_lens, epoch=current_epoch)
 
         # Add augmentation if specified
         if self.hparams.augment and stage == sb.Stage.TRAIN:

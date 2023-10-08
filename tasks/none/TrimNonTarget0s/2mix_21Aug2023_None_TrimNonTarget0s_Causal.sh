@@ -16,7 +16,6 @@ hparams/LibriSpeechMix/conformer-t_none.yaml \
 --num_epochs $NUM_EPOCHS \
 --augment $AUGMENT \
 --trim_nontarget 0.0 \
---normalize_input False \
 --causal_encoder True \
 --frontend_padding causal \
 --distributed_launch

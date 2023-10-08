@@ -18,7 +18,6 @@ hparams/LibriSpeechMix/conformer-t_none.yaml \
 --trim_nontarget 0.0 \
 --num_targets min \
 --suppress_delay True \
---normalize_input False \
 --causal_encoder True \
 --frontend_padding causal \
 --distributed_launch

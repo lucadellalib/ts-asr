@@ -18,7 +18,6 @@ hparams/LibriSpeechMix/conformer-t_wavlm.yaml \
 --trim_nontarget 0.0 \
 --injection_mode cross_attention \
 --speaker_embedding_dim 768 \
---normalize_input False \
 --causal_encoder True \
 --frontend_padding causal \
 --distributed_launch

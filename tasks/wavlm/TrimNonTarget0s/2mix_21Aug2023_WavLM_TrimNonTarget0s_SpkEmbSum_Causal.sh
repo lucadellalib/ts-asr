@@ -17,7 +17,6 @@ hparams/LibriSpeechMix/conformer-t_wavlm.yaml \
 --augment $AUGMENT \
 --trim_nontarget 0.0 \
 --injection_mode sum \
---normalize_input False \
 --causal_encoder True \
 --frontend_padding causal \
 --distributed_launch

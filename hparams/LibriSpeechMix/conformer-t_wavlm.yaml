@@ -87,13 +87,12 @@ keep_checkpoints: 10
 dropout: 0.1
 d_model: 256
 nhead: 4
-encoder_num_layers: 16
+encoder_num_layers: 12
 d_ffn: 2048
 kernel_size: 31
 injection_mode: cat
 injection_after: 0
 # NOTE: the following parameters must be changed to switch from non-causal (default) to causal
-normalize_input: True
 causal_encoder: False
 frontend_padding: same  # ["same", "causal"]
 
@@ -105,7 +104,7 @@ joint_dim: 640
 
 # Decoding parameters
 valid_search_freq: 1
-beam_size: 29
+beam_size: 15
 # state_beam and expand_beam set according to https://arxiv.org/abs/1904.02619
 state_beam: 2.3
 expand_beam: 2.3
