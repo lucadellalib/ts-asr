@@ -151,7 +151,9 @@ def prepare_librispeechmix(
                     speakers = input_entry["speakers"]
                     genders = input_entry["genders"]
 
-                    if isinstance(num_targets, list):
+                    if isinstance(num_targets, (int, float)):
+                        target_speaker_idxes = list(range(int(num_targets)))
+                    elif isinstance(num_targets, list):
                         target_speaker_idxes = num_targets
                     elif num_targets == "min":
                         min_duration = min(durations)
@@ -161,8 +163,10 @@ def prepare_librispeechmix(
                         max_duration = max(durations)
                         max_idx = durations.index(max_duration)
                         target_speaker_idxes = [max_idx]
-                    else:
+                    elif num_targets is None:
                         target_speaker_idxes = list(range(len(texts)))
+                    else:
+                        raise NotImplementedError
 
                     wavs = [os.path.join("{DATA_ROOT}", wav) for wav in wavs]
                     for target_speaker_idx in target_speaker_idxes:

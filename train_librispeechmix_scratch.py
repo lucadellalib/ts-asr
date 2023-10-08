@@ -426,7 +426,6 @@ def dataio_prepare(hparams, tokenizer):
                         output_path, f"{ID}_fbanks_enrollment.{format}"
                     ),
                 )
-
         yield enroll_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)

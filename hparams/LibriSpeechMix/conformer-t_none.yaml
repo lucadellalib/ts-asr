@@ -40,6 +40,8 @@ save_folder: !ref <output_folder>/save
 train_remove_if_longer: 60.0  # Seconds
 valid_remove_if_longer: 60.0  # Seconds
 test_remove_if_longer: 60.0  # Seconds
+trim_enroll: 4.0  # Seconds
+prompt: False  # True to prepend the enrollment signal to the mixture
 gain_nontarget: 0  # With respect to the power of the target signal (< 0 => larger target speaker SIR)
 sample_rate: 16000
 sorting: ascending

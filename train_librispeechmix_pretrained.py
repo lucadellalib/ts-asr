@@ -413,7 +413,7 @@ def dataio_prepare(hparams, tokenizer):
                     enroll_sig,
                     hparams["sample_rate"],
                     output_image=os.path.join(
-                        output_path, f"{ID}_waveform_enrollment.{format}"
+                        output_path, f"{ID}_waveform_enrollment.{format}",
                     ),
                     labels=["Enrollment"],
                     legend=True,
@@ -425,7 +425,6 @@ def dataio_prepare(hparams, tokenizer):
                         output_path, f"{ID}_fbanks_enrollment.{format}"
                     ),
                 )
-
         yield enroll_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)

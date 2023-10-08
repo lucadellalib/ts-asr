@@ -255,10 +255,12 @@ def dataio_prepare(hparams, tokenizer):
 
     # 2. Define audio pipeline
     @sb.utils.data_pipeline.takes(
-        "wavs", "delays", "start", "duration", "target_speaker_idx", "id",
+        "wavs", "enroll_wav", "delays", "start", "duration", "target_speaker_idx", "id",
     )
-    @sb.utils.data_pipeline.provides("mixed_sig")
-    def audio_pipeline(wavs, delays, start, duration, target_speaker_idx, ID):
+    @sb.utils.data_pipeline.provides("mixed_sig", "enroll_sig")
+    def audio_pipeline(
+        wavs, enroll_wav, delays, start, duration, target_speaker_idx, ID
+    ):
         # Mixed signal
         sigs = []
         for wav in wavs:
@@ -299,6 +301,21 @@ def dataio_prepare(hparams, tokenizer):
         frame_duration = math.ceil(duration * hparams["sample_rate"])
         mixed_sig = mixed_sig[frame_start : frame_start + frame_duration]
 
+        # Enrollment signal
+        try:
+            enroll_sig, sample_rate = torchaudio.load(enroll_wav)
+        except RuntimeError:
+            enroll_sig, sample_rate = torchaudio.load(
+                enroll_wav.replace(".wav", ".flac")
+            )
+        enroll_sig = torchaudio.functional.resample(
+            enroll_sig[0], sample_rate, hparams["sample_rate"],
+        )
+        # Trim enrollment signal if too long
+        enroll_sig = enroll_sig[
+            : math.ceil(hparams["trim_enroll"] * hparams["sample_rate"])
+        ]
+
         if hparams["plot_data"]:
             from utils import play_waveform, plot_fbanks, plot_waveform
 
@@ -328,7 +345,36 @@ def dataio_prepare(hparams, tokenizer):
                     output_image=os.path.join(output_path, f"{ID}_fbanks.{format}"),
                 )
 
+            play_waveform(
+                enroll_sig,
+                hparams["sample_rate"],
+                os.path.join(output_path, f"{ID}_enrollment.wav"),
+            )
+            for format in hparams["image_formats"]:
+                plot_waveform(
+                    enroll_sig,
+                    hparams["sample_rate"],
+                    output_image=os.path.join(
+                        output_path, f"{ID}_waveform_enrollment.{format}",
+                    ),
+                    labels=["Enrollment"],
+                    legend=True,
+                )
+                plot_fbanks(
+                    enroll_sig,
+                    hparams["sample_rate"],
+                    output_image=os.path.join(
+                        output_path, f"{ID}_fbanks_enrollment.{format}"
+                    ),
+                )
+
+        if hparams["prompt"]:
+            mixed_sig = torch.cat(
+                [enroll_sig, torch.zeros(1 * hparams["sample_rate"]), mixed_sig]
+            )
+
         yield mixed_sig
+        yield enroll_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
 
@@ -355,7 +401,8 @@ def dataio_prepare(hparams, tokenizer):
 
     # 4. Set output
     sb.dataio.dataset.set_output_keys(
-        datasets, ["id", "mixed_sig", "tokens_bos", "tokens", "target_words"],
+        datasets,
+        ["id", "mixed_sig", "enroll_sig", "tokens_bos", "tokens", "target_words"],
     )
 
     return train_data, valid_data, test_data
