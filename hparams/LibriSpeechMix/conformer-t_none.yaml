@@ -45,8 +45,10 @@ gain_nontarget: 0  # With respect to the power of the target signal (< 0 => larg
 sample_rate: 16000
 sorting: ascending
 
-# Inference time prompting
-prompt_inference: False  # True to prepend/append the enrollment signal to the mixture at inference time
+# Test time prompting
+# NOTE: if enabled, the duration reported in the JSON manifest file will not match the real duration anymore
+# => higher chance of out-of-memory errors
+prompt_test: False  # True to prepend/append the enrollment signal to the mixture at inference time
 prompt_mode: [prepend, append]
 
 # Features

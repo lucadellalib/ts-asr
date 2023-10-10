@@ -65,13 +65,13 @@ class TSASR(sb.Brain):
                 ID = ID.replace("/", "_").split(".")[0]
                 output_path = os.path.join(hparams["image_folder"], ID, "attention")
                 os.makedirs(output_path, exist_ok=True)
-                for format in hparams["image_formats"]:
+                for fmt in hparams["image_formats"]:
                     for j, attn in enumerate(attns):
                         plot_attention(
                             attn[i].detach().cpu(),
                             os.path.join(
                                 output_path,
-                                f"{ID}_attention_{str(j + 1).zfill(2)}.{format}",
+                                f"{ID}_attention_{str(j + 1).zfill(2)}.{fmt}",
                             ),
                         )
         else:
@@ -121,6 +121,21 @@ class TSASR(sb.Brain):
 
             # Decode predicted tokens to words
             predicted_words = self.tokenizer(hyps, task="decode_from_list")
+
+            if self.hparams.prompt_test and not brain.hparams.transcribe_enroll:
+                # Remove enrollment transcriptions
+                for i, (ID, transcription) in enumerate(zip(ids, predicted_words)):
+                    enroll_transcription = self.hparams.enroll_transcriptions[ID]
+                    if "prepend" in self.hparams.prompt_mode:
+                        transcription = transcription[len(enroll_transcription) :]
+                    if "append" in self.hparams.prompt_mode:
+                        # Robust to the case where len(enroll_transcription) = 0
+                        transcription = transcription[
+                            : len(transcription) - len(enroll_transcription)
+                        ]
+                    if len(transcription) == 0:
+                        transcription = [""]
+                    predicted_words[i] = transcription
 
             self.cer_metric.append(ids, predicted_words, target_words)
             self.wer_metric.append(ids, predicted_words, target_words)
@@ -326,13 +341,13 @@ def dataio_prepare(hparams, tokenizer):
                 hparams["sample_rate"],
                 os.path.join(output_path, f"{ID}.wav"),
             )
-            for format in hparams["image_formats"]:
+            for fmt in hparams["image_formats"]:
                 plot_waveform(
                     [sigs[target_speaker_idx]]
                     + [x for i, x in enumerate(sigs) if i != target_speaker_idx],
                     hparams["sample_rate"],
                     opacity=0.6,
-                    output_image=os.path.join(output_path, f"{ID}_waveform.{format}"),
+                    output_image=os.path.join(output_path, f"{ID}_waveform.{fmt}"),
                     labels=["Target"] + ["Interference"]
                     if len(sigs) == 2
                     else [f"Interference {i + 1}" for i in range(len(sigs) - 1)],
@@ -341,7 +356,7 @@ def dataio_prepare(hparams, tokenizer):
                 plot_fbanks(
                     mixed_sig,
                     hparams["sample_rate"],
-                    output_image=os.path.join(output_path, f"{ID}_fbanks.{format}"),
+                    output_image=os.path.join(output_path, f"{ID}_fbanks.{fmt}"),
                 )
 
             play_waveform(
@@ -349,12 +364,12 @@ def dataio_prepare(hparams, tokenizer):
                 hparams["sample_rate"],
                 os.path.join(output_path, f"{ID}_enrollment.wav"),
             )
-            for format in hparams["image_formats"]:
+            for fmt in hparams["image_formats"]:
                 plot_waveform(
                     enroll_sig,
                     hparams["sample_rate"],
                     output_image=os.path.join(
-                        output_path, f"{ID}_waveform_enrollment.{format}",
+                        output_path, f"{ID}_waveform_enrollment.{fmt}",
                     ),
                     labels=["Enrollment"],
                     legend=True,
@@ -363,15 +378,17 @@ def dataio_prepare(hparams, tokenizer):
                     enroll_sig,
                     hparams["sample_rate"],
                     output_image=os.path.join(
-                        output_path, f"{ID}_fbanks_enrollment.{format}"
+                        output_path, f"{ID}_fbanks_enrollment.{fmt}"
                     ),
                 )
 
-        if hparams["prompt"]:
+        if hparams["prompt_test"]:
             if "prepend" in hparams["prompt_mode"]:
                 mixed_sig = torch.cat([enroll_sig, mixed_sig])
             if "append" in hparams["prompt_mode"]:
                 mixed_sig = torch.cat([mixed_sig, enroll_sig])
+        if hparams.get("transcribe_enroll", False):
+            mixed_sig = enroll_sig
 
         yield mixed_sig
         yield enroll_sig
@@ -566,6 +583,28 @@ if __name__ == "__main__":
             hparams["output_folder"], f"wer_{split}.txt"
         )
 
+        if hparams["prompt_test"]:
+            # Transcribe enrollments
+            brain.hparams.transcribe_enroll = hparams["transcribe_enroll"] = True
+            original_wer_file = brain.hparams.wer_file
+            brain.hparams.wer_file = os.path.join(
+                os.path.dirname(original_wer_file), "wer_enrollments.txt"
+            )
+            brain.evaluate(
+                test_data,
+                min_key="WER",
+                test_loader_kwargs=hparams["test_dataloader_kwargs"],
+            )
+            enroll_transcriptions = {
+                x["key"]: x["hyp_tokens"] for x in brain.wer_metric.scores
+            }
+            brain.hparams.enroll_transcriptions = hparams[
+                "enroll_transcriptions"
+            ] = enroll_transcriptions
+            brain.hparams.transcribe_enroll = hparams["transcribe_enroll"] = False
+            brain.hparams.wer_file = original_wer_file
+
+        # Transcribe mixtures
         brain.evaluate(
             test_data,
             min_key="WER",

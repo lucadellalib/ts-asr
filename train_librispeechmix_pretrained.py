@@ -105,13 +105,13 @@ class TSASR(sb.Brain):
                 ID = ID.replace("/", "_").split(".")[0]
                 output_path = os.path.join(hparams["image_folder"], ID, "attention")
                 os.makedirs(output_path, exist_ok=True)
-                for format in hparams["image_formats"]:
+                for fmt in hparams["image_formats"]:
                     for j, attn in enumerate(attns):
                         plot_attention(
                             attn[i].detach().cpu(),
                             os.path.join(
                                 output_path,
-                                f"{ID}_attention_{str(j + 1).zfill(2)}.{format}",
+                                f"{ID}_attention_{str(j + 1).zfill(2)}.{fmt}",
                             ),
                         )
         else:
@@ -246,11 +246,11 @@ class TSASR(sb.Brain):
             from utils import plot_embeddings
 
             os.makedirs(hparams["image_folder"], exist_ok=True)
-            for format in hparams["image_formats"]:
+            for fmt in hparams["image_formats"]:
                 plot_embeddings(
                     list(self.all_speaker_embs.values()),
                     [str(x.split("/")[-3]) for x in self.all_speaker_embs.keys()],
-                    os.path.join(hparams["image_folder"], f"embeddings.{format}"),
+                    os.path.join(hparams["image_folder"], f"embeddings.{fmt}"),
                     title="Frozen pretrained speaker encoder",
                     perplexity=min(len(self.all_speaker_embs) - 1, 30),
                 )
@@ -385,13 +385,13 @@ def dataio_prepare(hparams, tokenizer):
                 hparams["sample_rate"],
                 os.path.join(output_path, f"{ID}.wav"),
             )
-            for format in hparams["image_formats"]:
+            for fmt in hparams["image_formats"]:
                 plot_waveform(
                     [sigs[target_speaker_idx]]
                     + [x for i, x in enumerate(sigs) if i != target_speaker_idx],
                     hparams["sample_rate"],
                     opacity=0.6,
-                    output_image=os.path.join(output_path, f"{ID}_waveform.{format}"),
+                    output_image=os.path.join(output_path, f"{ID}_waveform.{fmt}"),
                     labels=["Target"] + ["Interference"]
                     if len(sigs) == 2
                     else [f"Interference {i + 1}" for i in range(len(sigs) - 1)],
@@ -400,7 +400,7 @@ def dataio_prepare(hparams, tokenizer):
                 plot_fbanks(
                     mixed_sig,
                     hparams["sample_rate"],
-                    output_image=os.path.join(output_path, f"{ID}_fbanks.{format}"),
+                    output_image=os.path.join(output_path, f"{ID}_fbanks.{fmt}"),
                 )
 
             play_waveform(
@@ -408,12 +408,12 @@ def dataio_prepare(hparams, tokenizer):
                 hparams["sample_rate"],
                 os.path.join(output_path, f"{ID}_enrollment.wav"),
             )
-            for format in hparams["image_formats"]:
+            for fmt in hparams["image_formats"]:
                 plot_waveform(
                     enroll_sig,
                     hparams["sample_rate"],
                     output_image=os.path.join(
-                        output_path, f"{ID}_waveform_enrollment.{format}",
+                        output_path, f"{ID}_waveform_enrollment.{fmt}",
                     ),
                     labels=["Enrollment"],
                     legend=True,
@@ -422,7 +422,7 @@ def dataio_prepare(hparams, tokenizer):
                     enroll_sig,
                     hparams["sample_rate"],
                     output_image=os.path.join(
-                        output_path, f"{ID}_fbanks_enrollment.{format}"
+                        output_path, f"{ID}_fbanks_enrollment.{fmt}"
                     ),
                 )
         yield enroll_sig
