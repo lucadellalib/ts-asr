@@ -64,6 +64,7 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
     The following features are available:
     - "duration"
     - "target_duration"
+    - "nontarget_duration"
     - "interference_duration"
     - "overlap_ratio_target"
     - "overlap_ratio_mixture"
@@ -109,6 +110,9 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
         target_end = min(target_end, start + duration)
         target_duration = target_end - target_start
         features[utterance_id]["target_duration"] = target_duration
+
+        # Non-target duration
+        features[utterance_id]["nontarget_duration"] = duration - target_duration
 
         # Interference duration
         interference_endpoints = []
@@ -316,7 +320,16 @@ if __name__ == "__main__":
         "-d", "--data_manifest", help="path to data manifest",
     )
     parser.add_argument(
-        "--feature", help="feature to plot along the x-axis",
+        "--feature",
+        help="feature to plot along the x-axis",
+        choices=[
+            "duration",
+            "target_duration",
+            "nontarget_duration",
+            "interference_duration",
+            "overlap_ratio_target",
+            "overlap_ratio_mixture",
+        ],
     )
     parser.add_argument(
         "-o", "--output_image", help="path to output image",

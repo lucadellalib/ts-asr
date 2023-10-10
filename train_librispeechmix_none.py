@@ -368,9 +368,10 @@ def dataio_prepare(hparams, tokenizer):
                 )
 
         if hparams["prompt"]:
-            mixed_sig = torch.cat(
-                [enroll_sig, torch.zeros(1 * hparams["sample_rate"]), mixed_sig]
-            )
+            if "prepend" in hparams["prompt_mode"]:
+                mixed_sig = torch.cat([enroll_sig, mixed_sig])
+            if "append" in hparams["prompt_mode"]:
+                mixed_sig = torch.cat([mixed_sig, enroll_sig])
 
         yield mixed_sig
         yield enroll_sig

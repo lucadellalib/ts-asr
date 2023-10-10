@@ -251,6 +251,7 @@ class TSASR(sb.Brain):
                     list(self.all_speaker_embs.values()),
                     [str(x.split("/")[-3]) for x in self.all_speaker_embs.keys()],
                     os.path.join(hparams["image_folder"], f"embeddings.{format}"),
+                    title="Frozen pretrained speaker encoder",
                     perplexity=min(len(self.all_speaker_embs) - 1, 30),
                 )
 
