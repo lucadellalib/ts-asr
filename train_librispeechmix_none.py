@@ -122,7 +122,11 @@ class TSASR(sb.Brain):
             # Decode predicted tokens to words
             predicted_words = self.tokenizer(hyps, task="decode_from_list")
 
-            if self.hparams.prompt_test and not brain.hparams.transcribe_enroll:
+            if (
+                stage == sb.Stage.TEST
+                and self.hparams.prompt_test
+                and not brain.hparams.transcribe_enroll
+            ):
                 # Remove enrollment transcriptions
                 for i, (ID, transcription) in enumerate(zip(ids, predicted_words)):
                     enroll_transcription = self.hparams.enroll_transcriptions[ID]
@@ -541,6 +545,12 @@ if __name__ == "__main__":
         train_loader_kwargs=hparams["train_dataloader_kwargs"],
         valid_loader_kwargs=hparams["valid_dataloader_kwargs"],
     )
+
+    if hparams["plot_grad_norm"]:
+        # Plot gradient norm (checkpointing is not supported)
+        from utils import plot_grad_norm
+
+        plot_grad_norm(brain.grad_norm)
 
     # Test on each split separately
     for split in hparams["test_splits"]:

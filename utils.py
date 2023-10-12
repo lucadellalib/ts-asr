@@ -18,6 +18,7 @@ __all__ = [
     "plot_attention",
     "plot_embeddings",
     "plot_fbanks",
+    "plot_grad_norm",
     "plot_waveform",
 ]
 
@@ -259,10 +260,11 @@ def plot_fbanks(
 
 def plot_attention(
     attention,
+    average=True,
     output_image="attention.jpg",
     xlabel="Feature frame",
     ylabel="Feature frame",
-    figsize=(16.0, 4.0),
+    figsize=(4.0, 4.0),
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
@@ -273,6 +275,8 @@ def plot_attention(
     ---------
     attention : np.ndarray
         The attention map, shape: [num_heads, query_length, key_value_length].
+    average : bool, optional
+        True to average the attention heads, False otherwise.
     output_image : str, optional
         The path to the output image.
     xlabel : str, optional
@@ -300,16 +304,21 @@ def plot_attention(
         style_file_or_name = os.path.realpath(style_file_or_name)
     with _set_style(style_file_or_name, usetex):
         attention = np.array(attention)
+        if average:
+            attention = attention.mean(axis=0, keepdims=True)
         H = attention.shape[0]
         # fig, axes = plt.subplots(
         #    1, H + 1, figsize=figsize, gridspec_kw={"width_ratios": [1, 1, 1, 1, 0.05]}
         # )
-        fig, axes = plt.subplots(1, H, figsize=figsize)
+        fig, axes = plt.subplots(1, H, figsize=figsize, squeeze=False)
         for i, head in enumerate(attention):
-            ax = axes[i]
+            ax = axes[0, i]
             ax.imshow(head, cmap="viridis")
             # im = ax.imshow(head, cmap="viridis")
-            ax.set_title(f"Head {i + 1}")
+            if H == 1:
+                ax.set_title("Average attention")
+            else:
+                ax.set_title(f"Head {i + 1}")
             if xlabel:
                 ax.set_xlabel(xlabel)
             if ylabel:
@@ -394,6 +403,79 @@ def plot_embeddings(
     with _set_style(style_file_or_name, usetex):
         plt.figure(figsize=figsize)
         plt.scatter(embeddings[:, 0], embeddings[:, 1], c=labels)
+        plt.grid()
+        if xlabel:
+            plt.xlabel(xlabel)
+        if ylabel:
+            plt.ylabel(ylabel)
+        if title:
+            plt.title(title)
+
+        if interactive:
+            plt.show(block=False)
+        plt.tight_layout()
+        plt.savefig(output_image, bbox_inches="tight")
+        plt.close()
+
+
+def plot_grad_norm(
+    grad_norm,
+    output_image="grad_norm.jpg",
+    xlabel="Epoch",
+    ylabel="Gradient L2 norm",
+    title=None,
+    figsize=(6.0, 4.0),
+    usetex=False,
+    style_file_or_name="classic",
+    interactive=False,
+):
+    """Plot the gradient norm.
+
+    Arguments
+    ---------
+    grad_norm : np.ndarray
+        The gradient norm.
+    output_image : str, optional
+        The path to the output image.
+    xlabel : str, optional
+        The x-axis label.
+    ylabel : str, optional
+        The y-axis label.
+    title : str, optional
+        The title.
+    figsize : tuple, optional
+        The figure size.
+    usetex : bool, optional
+        True to render text with LaTeX, False otherwise.
+    style_file_or_name : str, optional
+        The path to a Matplotlib style file or the name of one of Matplotlib built-in styles
+        (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
+    interactive : bool, optional
+        True to plot interactively, False otherwise.
+
+    """
+    try:
+        from matplotlib import pyplot as plt, rc
+    except ImportError:
+        logging.warning("This function requires Matplotlib (`pip install matplotlib`)")
+        return
+
+    try:
+        from speechbrain.lobes.features import Fbank
+        import torch
+    except ImportError:
+        logging.warning(
+            "This function requires SpeechBrain (`pip install speechbrain`)"
+        )
+        return
+
+    if os.path.isfile(style_file_or_name):
+        style_file_or_name = os.path.realpath(style_file_or_name)
+    with _set_style(style_file_or_name, usetex):
+        plt.figure(figsize=figsize)
+        grad_norm = np.array(grad_norm).squeeze()
+        plt.plot(range(1, len(grad_norm) + 1), grad_norm)
+        plt.xlim(1, len(grad_norm))
         plt.grid()
         if xlabel:
             plt.xlabel(xlabel)

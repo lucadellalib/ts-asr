@@ -13,10 +13,10 @@ seed: 0
 __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Set to True for plotting intermediate results (useful at test time to analyze the model)
-# NOTE: when plotting, it is recommended to set `dataloader_workers=0`
-# NOTE: plotting is not supported in distributed mode
+# NOTE: when plotting, it is recommended to set `dataloader_workers=0` and disable distributed training
 plot_data: False
 plot_attentions: False
+plot_grad_norm: False
 plot_embeddings: False
 image_folder: !ref <output_folder>/images
 image_formats: [jpg, pdf]
@@ -46,6 +46,12 @@ trim_enroll: 20.0  # Seconds, must be >= 0.325, the minimum allowed by WavLM
 gain_nontarget: 0  # With respect to the power of the target signal (< 0 => larger target speaker SIR)
 sample_rate: 16000
 sorting: ascending
+
+# Test time prompting
+# NOTE: if enabled, the duration reported in the JSON manifest file will not match the real duration anymore
+# => higher chance of out-of-memory errors
+prompt_test: False  # True to prepend/append the enrollment signal to the mixture at inference time
+prompt_mode: [prepend, append]
 
 # Features
 n_fft: 512

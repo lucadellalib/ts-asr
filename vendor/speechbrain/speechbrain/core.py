@@ -1080,9 +1080,10 @@ class Brain:
                 if self.auto_mix_prec:
                     self.scaler.unscale_(self.optimizer)
                 if self.max_grad_norm > 0.0:
-                    torch.nn.utils.clip_grad_norm_(
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.modules.parameters(), self.max_grad_norm
                     )
+                    self.grad_norm_epoch.append(grad_norm.item())
                 if self.auto_mix_prec:
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
@@ -1179,6 +1180,7 @@ class Brain:
         self.on_stage_start(Stage.TRAIN, epoch)
         self.modules.train()
         self.zero_grad()
+        self.grad_norm_epoch = []
 
         # Reset nonfinite count to 0 each epoch
         self.nonfinite_count = 0
@@ -1233,6 +1235,8 @@ class Brain:
         self.avg_train_loss = 0.0
         self.step = 0
         self.valid_step = 0
+        self.grad_norm.append(sum(self.grad_norm_epoch) / len(self.grad_norm_epoch))
+        self.grad_norm_epoch = []
 
     def _should_save_intra_epoch_ckpt(self, last_ckpt_time, steps_since_ckpt):
         """Determines if an intra-epoch checkpoint should be saved.
@@ -1363,6 +1367,7 @@ class Brain:
         enable = progressbar and sb.utils.distributed.if_main_process()
 
         # Iterate epochs
+        self.grad_norm = []
         for epoch in epoch_counter:
             self._fit_train(train_set=train_set, epoch=epoch, enable=enable)
             self._fit_valid(valid_set=valid_set, epoch=epoch, enable=enable)

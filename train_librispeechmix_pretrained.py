@@ -164,6 +164,25 @@ class TSASR(sb.Brain):
             # Decode predicted tokens to words
             predicted_words = self.tokenizer(hyps, task="decode_from_list")
 
+            if (
+                stage == sb.Stage.TEST
+                and self.hparams.prompt_test
+                and not brain.hparams.transcribe_enroll
+            ):
+                # Remove enrollment transcriptions
+                for i, (ID, transcription) in enumerate(zip(ids, predicted_words)):
+                    enroll_transcription = self.hparams.enroll_transcriptions[ID]
+                    if "prepend" in self.hparams.prompt_mode:
+                        transcription = transcription[len(enroll_transcription) :]
+                    if "append" in self.hparams.prompt_mode:
+                        # Robust to the case where len(enroll_transcription) = 0
+                        transcription = transcription[
+                            : len(transcription) - len(enroll_transcription)
+                        ]
+                    if len(transcription) == 0:
+                        transcription = [""]
+                    predicted_words[i] = transcription
+
             self.cer_metric.append(ids, predicted_words, target_words)
             self.wer_metric.append(ids, predicted_words, target_words)
 
@@ -251,7 +270,7 @@ class TSASR(sb.Brain):
                     list(self.all_speaker_embs.values()),
                     [str(x.split("/")[-3]) for x in self.all_speaker_embs.keys()],
                     os.path.join(hparams["image_folder"], f"embeddings.{fmt}"),
-                    title="Frozen pretrained speaker encoder",
+                    title="Frozen pretrained WavLM",
                     perplexity=min(len(self.all_speaker_embs) - 1, 30),
                 )
 
@@ -357,7 +376,6 @@ def dataio_prepare(hparams, tokenizer):
         frame_start = math.ceil(start * hparams["sample_rate"])
         frame_duration = math.ceil(duration * hparams["sample_rate"])
         mixed_sig = mixed_sig[frame_start : frame_start + frame_duration]
-        yield mixed_sig
 
         # Enrollment signal
         try:
@@ -425,6 +443,16 @@ def dataio_prepare(hparams, tokenizer):
                         output_path, f"{ID}_fbanks_enrollment.{fmt}"
                     ),
                 )
+
+        if hparams["prompt_test"]:
+            if "prepend" in hparams["prompt_mode"]:
+                mixed_sig = torch.cat([enroll_sig, mixed_sig])
+            if "append" in hparams["prompt_mode"]:
+                mixed_sig = torch.cat([mixed_sig, enroll_sig])
+        if hparams.get("transcribe_enroll", False):
+            mixed_sig = enroll_sig
+
+        yield mixed_sig
         yield enroll_sig
 
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
@@ -587,6 +615,12 @@ if __name__ == "__main__":
         valid_loader_kwargs=hparams["valid_dataloader_kwargs"],
     )
 
+    if hparams["plot_grad_norm"]:
+        # Plot gradient norm (checkpointing is not supported)
+        from utils import plot_grad_norm
+
+        plot_grad_norm(brain.grad_norm)
+
     # Test on each split separately
     for split in hparams["test_splits"]:
         # Due to DDP, do the preparation ONLY on the main Python process
@@ -628,6 +662,28 @@ if __name__ == "__main__":
             hparams["output_folder"], f"wer_{split}.txt"
         )
 
+        if hparams["prompt_test"]:
+            # Transcribe enrollments
+            brain.hparams.transcribe_enroll = hparams["transcribe_enroll"] = True
+            original_wer_file = brain.hparams.wer_file
+            brain.hparams.wer_file = os.path.join(
+                os.path.dirname(original_wer_file), "wer_enrollments.txt"
+            )
+            brain.evaluate(
+                test_data,
+                min_key="WER",
+                test_loader_kwargs=hparams["test_dataloader_kwargs"],
+            )
+            enroll_transcriptions = {
+                x["key"]: x["hyp_tokens"] for x in brain.wer_metric.scores
+            }
+            brain.hparams.enroll_transcriptions = hparams[
+                "enroll_transcriptions"
+            ] = enroll_transcriptions
+            brain.hparams.transcribe_enroll = hparams["transcribe_enroll"] = False
+            brain.hparams.wer_file = original_wer_file
+
+        # Transcribe mixtures
         brain.evaluate(
             test_data,
             min_key="WER",

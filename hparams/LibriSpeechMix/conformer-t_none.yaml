@@ -13,10 +13,10 @@ seed: 0
 __set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # Set to True for plotting intermediate results (useful at test time to analyze the model)
-# NOTE: when plotting, it is recommended to set `dataloader_workers=0`
-# NOTE: plotting is not supported in distributed mode
+# NOTE: when plotting, it is recommended to set `dataloader_workers=0` and disable distributed training
 plot_data: False
 plot_attentions: False
+plot_grad_norm: False
 image_folder: !ref <output_folder>/images
 image_formats: [jpg, pdf]
 
