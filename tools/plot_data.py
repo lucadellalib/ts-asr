@@ -14,7 +14,7 @@ import contextlib
 import json
 import os
 from collections import defaultdict
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 
 try:
@@ -174,9 +174,13 @@ def parse_data_manifest(data_manifest: "str") -> "Dict[str, Dict]":
     return features
 
 
+_Features = Dict[str, Union[float, Tuple[float, float]]]
+
+
 def plot_data(
-    features: "Dict[str, Union[float, Tuple[float, float]]]",
+    features: "Union[_Features, Dict[str, _Features]]",
     output_image: "str",
+    labels: "Optional[List[str]]" = None,
     xlabel: "Optional[str]" = None,
     ylabel: "Optional[str]" = None,
     title: "Optional[str]" = None,
@@ -193,8 +197,12 @@ def plot_data(
         IDs to the corresponding feature values.
         If the feature value is a pair, a scatter plot is produced.
         Otherwise, a histogram is produced.
+        If a dict of dicts, plot each of them in the same figure.
     output_image:
         The path to the output image.
+    labels:
+        The label for each data manifest.
+        Used only if `features` is a dict of dicts.
     xlabel:
         The x-axis label.
     ylabel:
@@ -219,21 +227,38 @@ def plot_data(
         style_file_or_name = os.path.realpath(style_file_or_name)
     with _set_style(style_file_or_name, usetex):
         plt.figure(figsize=figsize)
-        features = list(features.values())
-        if isinstance(features[0], (tuple, list)):
-            x_features, y_features = zip(*features)
-            plt.scatter(x_features, y_features)
+        if isinstance(list(features.values())[0], dict):
+            if labels is None:
+                labels = list(features.keys())
+            colors = ["b", "g", "r", "c", "m", "y", "k"]
+            for i, v in enumerate(features.values()):
+                v = list(v.values())
+                if isinstance(v[0], (tuple, list)):
+                    x_features, y_features = zip(*v)
+                    plt.scatter(
+                        x_features, y_features, label=labels[i], color=colors[i]
+                    )
+                else:
+                    plt.hist(v, histtype="step", label=labels[i])
+            plt.legend(scatterpoints=2, fancybox=True)
+            if title:
+                plt.title(title)
         else:
-            plt.hist(features, histtype="step")
+            features = list(features.values())
+            if isinstance(features[0], (tuple, list)):
+                x_features, y_features = zip(*features)
+                plt.scatter(x_features, y_features)
+            else:
+                plt.hist(features, histtype="step")
+            if title:
+                plt.title(title)
+            else:
+                plt.title(f"{len(features)} samples")
         plt.grid()
         if xlabel:
             plt.xlabel(xlabel)
         if ylabel:
             plt.ylabel(ylabel)
-        if title:
-            plt.title(title)
-        else:
-            plt.title(f"{len(features)} samples")
         # xmin, xmax = plt.xlim()
         # xrange = xmax - xmin
         # plt.xlim(xmin - 0.025 * xrange, xmax + 0.025 * xrange)
@@ -250,10 +275,10 @@ if __name__ == "__main__":
         description="Plot data statistics from a JSON manifest file"
     )
     parser.add_argument(
-        "data_manifest", help="path to data manifest",
+        "data_manifest", nargs="+", help="path to data manifest(s)",
     )
     parser.add_argument(
-        "feature",
+        "--feature",
         nargs="+",
         help="feature(s) to plot",
         choices=[
@@ -264,6 +289,9 @@ if __name__ == "__main__":
             "overlap_ratio_target",
             "overlap_ratio_mixture",
         ],
+    )
+    parser.add_argument(
+        "-l", "--labels", nargs="+", help="labels (one for each data manifest)",
     )
     parser.add_argument(
         "-o", "--output_image", help="path to output image",
@@ -291,25 +319,34 @@ if __name__ == "__main__":
         dest="style_file_or_name",
     )
     args = parser.parse_args()
-    features = parse_data_manifest(args.data_manifest)
+    features = {}
+    for data_manifest in args.data_manifest:
+        features[data_manifest] = parse_data_manifest(data_manifest)
     feature = args.feature
 
     if len(feature) == 1:
         feature = feature[0]
-        features = {x: features[x][feature] for x in features}
+        features = {
+            k: {x: features[k][x][feature] for x in features[k]}
+            for k, v in features.items()
+        }
         output_image = (
             args.output_image
-            or args.data_manifest.replace(".json", "") + f"_{feature}" + ".jpg"
+            or args.data_manifest[0].replace(".json", "") + f"_{feature}" + ".jpg"
         )
         xlabel = args.xlabel or feature
         ylabel = args.ylabel or "Count"
     elif len(feature) == 2:
         features = {
-            x: (features[x][feature[0]], features[x][feature[1]]) for x in features
+            k: {
+                x: (features[k][x][feature[0]], features[k][x][feature[1]])
+                for x in features[k]
+            }
+            for k, v in features.items()
         }
         output_image = (
             args.output_image
-            or args.data_manifest.replace(".json", "")
+            or args.data_manifest[0].replace(".json", "")
             + f"_{feature[0]}_vs_{feature[1]}"
             + ".jpg"
         )
@@ -319,9 +356,11 @@ if __name__ == "__main__":
         raise ValueError("No more than 2 features can be provided")
 
     title = args.title
+    labels = args.labels
     plot_data(
         features,
         output_image,
+        labels,
         xlabel,
         ylabel,
         title,
