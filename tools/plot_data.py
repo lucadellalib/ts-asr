@@ -239,7 +239,7 @@ def plot_data(
                         x_features, y_features, label=labels[i], color=colors[i]
                     )
                 else:
-                    plt.hist(v, histtype="step", label=labels[i])
+                    plt.hist(v, histtype="step", density=True, label=labels[i])
             plt.legend(scatterpoints=2, fancybox=True)
             if title:
                 plt.title(title)
@@ -249,7 +249,7 @@ def plot_data(
                 x_features, y_features = zip(*features)
                 plt.scatter(x_features, y_features)
             else:
-                plt.hist(features, histtype="step")
+                plt.hist(features, histtype="step", density=True)
             if title:
                 plt.title(title)
             else:
@@ -335,7 +335,7 @@ if __name__ == "__main__":
             or args.data_manifest[0].replace(".json", "") + f"_{feature}" + ".jpg"
         )
         xlabel = args.xlabel or feature
-        ylabel = args.ylabel or "Count"
+        ylabel = args.ylabel or "Frequency"
     elif len(feature) == 2:
         features = {
             k: {
