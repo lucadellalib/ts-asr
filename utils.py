@@ -260,7 +260,6 @@ def plot_fbanks(
 
 def plot_attention(
     attention,
-    average=True,
     output_image="attention.jpg",
     xlabel="Feature frame",
     ylabel="Feature frame",
@@ -268,6 +267,7 @@ def plot_attention(
     usetex=False,
     style_file_or_name="classic",
     interactive=False,
+    average=False,
 ):
     """Plot an attention map.
 
@@ -275,8 +275,6 @@ def plot_attention(
     ---------
     attention : np.ndarray
         The attention map, shape: [num_heads, query_length, key_value_length].
-    average : bool, optional
-        True to average the attention heads, False otherwise.
     output_image : str, optional
         The path to the output image.
     xlabel : str, optional
@@ -292,6 +290,8 @@ def plot_attention(
         (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html).
     interactive : bool, optional
         True to plot interactively, False otherwise.
+    average : bool, optional
+        True to average the attention heads, False otherwise.
 
     """
     try:
